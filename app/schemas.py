@@ -12,3 +12,14 @@ class SwimmerOut(SwimmerCreate):
 
     class Config:
         from_attributes = True  # lets Pydantic read directly from SQLAlchemy objects
+
+class MeetCreate(BaseModel):
+    name: str
+    date: date
+    location: str
+
+class MeetOut(MeetCreate):
+    id: int
+
+    class Config:
+        from_attributes = True  # lets Pydantic read directly from SQLAlchemy objects
