@@ -89,11 +89,15 @@ class MeetEntry(Base):
         back_populates="meet_entry", uselist=False
     )
 
+    __table_args__ = (
+        UniqueConstraint("meet_id", "swimmer_id", "event_id", name="uix_meet_entry"),
+    )
+
 
 class SwimTime(Base):
     """The actual recorded result for a meet entry.
 
-    Stored as a float in seconds (e.g. 62.45) rather than a formatted
+    Stored as a float in seconds (e.g. 32.45) rather than a formatted
     string like "1:02.45" - makes comparisons/math against time
     standards trivial. Format for display in the app layer instead.
     """
@@ -121,18 +125,20 @@ class TimeStandard(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
-    age_group: Mapped[str] = mapped_column(String(20))  # e.g. "11-12", "10 & Under"
+    organization: Mapped[str] = mapped_column(String(50))  # e.g. "USA Swimming", "MN Swimming"
+    age_group: Mapped[str] = mapped_column(String(50))  # e.g. "11-12", "15-16/17 & Over/Senior"
     gender: Mapped[str] = mapped_column(String(10))
-    standard_name: Mapped[str] = mapped_column(String(20))  # e.g. "B", "BB", "A", "AA", "AAA"
-    standard_rank: Mapped[int] = mapped_column()  # numeric order, e.g. B=1, BB=2, A=3 ... used to find "next standard up"
+    standard_name: Mapped[str] = mapped_column(String(20))  # e.g. "B", "BB", "A" or "BRNZ", "SLVR", "GOLD"
+    standard_rank: Mapped[int] = mapped_column()  # numeric order within this org's own scale, used to find "next standard up"
     time_seconds: Mapped[float] = mapped_column(Float)
-    season: Mapped[str] = mapped_column(String(20))  # e.g. "2025-2026"
+    season: Mapped[str] = mapped_column(String(20))  # e.g. "2025-2026" or "2024-2028"
 
     event: Mapped["Event"] = relationship(back_populates="time_standards")
 
     __table_args__ = (
         UniqueConstraint(
-            "event_id", "age_group", "gender", "standard_name", "season",
+            "event_id", "organization", "age_group", "gender", "standard_name", "season",
             name="uix_time_standard",
         ),
     )
+    
