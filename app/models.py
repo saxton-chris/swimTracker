@@ -1,11 +1,26 @@
+import enum
 from datetime import date
 
-from sqlalchemy import Date, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class Stroke(str, enum.Enum):
+    FR = "FR"  # Freestyle
+    BK = "BK"  # Backstroke
+    BR = "BR"  # Breaststroke
+    FL = "FL"  # Butterfly
+    IM = "IM"  # Individual Medley
+
+
+class Course(str, enum.Enum):
+    SCY = "SCY"  # Short Course Yards
+    SCM = "SCM"  # Short Course Meters
+    LCM = "LCM"  # Long Course Meters
 
 
 class Swimmer(Base):
@@ -35,10 +50,21 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(50), unique=True)  # e.g. "50 Free", "100 Back"
+    distance: Mapped[int] = mapped_column()  # e.g. 50, 100, 200
+    stroke: Mapped[Stroke] = mapped_column(SAEnum(Stroke))
+    course: Mapped[Course] = mapped_column(SAEnum(Course))
 
     meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="event")
     time_standards: Mapped[list["TimeStandard"]] = relationship(back_populates="event")
+
+    __table_args__ = (
+        UniqueConstraint("distance", "stroke", "course", name="uix_event"),
+    )
+
+    @property
+    def name(self) -> str:
+        """Display name, e.g. '50 FR SCY'. Not a stored column."""
+        return f"{self.distance} {self.stroke.value} {self.course.value}"
 
 
 class MeetEntry(Base):
@@ -67,7 +93,7 @@ class MeetEntry(Base):
 class SwimTime(Base):
     """The actual recorded result for a meet entry.
 
-    Stored as a float in seconds (e.g. 32.45) rather than a formatted
+    Stored as a float in seconds (e.g. 62.45) rather than a formatted
     string like "1:02.45" - makes comparisons/math against time
     standards trivial. Format for display in the app layer instead.
     """
