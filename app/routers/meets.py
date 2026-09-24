@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import SessionLocal
 import crud, schemas
@@ -19,3 +19,10 @@ def add_meet(meet: schemas.MeetCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[schemas.MeetOut])
 def list_meets(db: Session = Depends(get_db)):
     return crud.get_meets(db)
+
+@router.patch("/{meet_id}", response_model=schemas.MeetOut)
+def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(get_db)):
+    updated = crud.update_meet(db, meet_id, update)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")
+    return updated

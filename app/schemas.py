@@ -18,6 +18,13 @@ class SwimmerOut(SwimmerCreate):
         from_attributes = True  # lets Pydantic read directly from SQLAlchemy objects
 
 
+class SwimmerUpdate(BaseModel):
+    name: str | None = None
+    birthdate: date | None = None
+    gender: str | None = None
+    notes: str | None = None
+
+
 class MeetCreate(BaseModel):
     name: str
     date: date
@@ -29,6 +36,12 @@ class MeetOut(MeetCreate):
 
     class Config:
         from_attributes = True
+
+
+class MeetUpdate(BaseModel):
+    name: str | None = None
+    date: date | None = None
+    location: str | None = None
 
 
 class EventCreate(BaseModel):
@@ -56,6 +69,30 @@ class MeetEntryOut(MeetEntryCreate):
 
     class Config:
         from_attributes = True
+
+
+class MeetEntryUpdate(BaseModel):
+    meet_id: int | None = None
+    swimmer_id: int | None = None
+    event_id: int | None = None
+
+
+class SwimTimeCreate(BaseModel):
+    meet_entry_id: int
+    time_seconds: float
+    notes: str | None = None
+
+
+class SwimTimeOut(SwimTimeCreate):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class SwimTimeUpdate(BaseModel):
+    time_seconds: float | None = None
+    notes: str | None = None
 
 
 class TimeStandardCreate(BaseModel):
