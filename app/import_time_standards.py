@@ -42,10 +42,10 @@ from pathlib import Path
 import pdfplumber
 
 sys.path.insert(0, str(Path(__file__).parent))
+import crud
+import schemas
 from database import SessionLocal
-import crud, schemas
-from models import Stroke, Course
-
+from models import Course, Stroke
 
 # ---------------------------------------------------------------------------
 # Shared helpers

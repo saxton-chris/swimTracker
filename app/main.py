@@ -3,7 +3,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from routers import swimmers, meets, events, meet_entries, time_standards, swim_times
+
+from routers import events, meet_entries, meets, swim_times, swimmers, time_standards
 
 STATIC_DIR = Path(__file__).parent / "static"
 

@@ -1,0 +1,25 @@
+target-version = "py314"
+line-length = 120
+# app/ uses flat imports (`import crud`), so treat its modules as first-party.
+src = ["app", "tests"]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501",   # line length is left to `ruff format`; long strings and comments are fine
+    "B905",   # the PDF importers zip rows with deliberately uneven columns
+    "UP037",  # keep quoted forward references in SQLAlchemy relationships
+    "UP042",  # StrEnum would change str() of Stroke/Course values
+]
+
+[lint.flake8-bugbear]
+# FastAPI's dependency-injection defaults are evaluated once by design.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]

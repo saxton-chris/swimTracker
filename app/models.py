@@ -1,7 +1,8 @@
 import enum
 from datetime import date as date_type
 
-from sqlalchemy import Date, Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 

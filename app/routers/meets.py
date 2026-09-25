@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+import crud
+import schemas
 from database import get_db
-import crud, schemas
 
 router = APIRouter(prefix="/meets", tags=["meets"])
 
@@ -24,7 +26,7 @@ def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(
     try:
         schemas.check_meet_dates(changes.get("date", existing.date), changes.get("end_date", existing.end_date))
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     return crud.update_meet(db, meet_id, update)
 

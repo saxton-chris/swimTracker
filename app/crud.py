@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
-from models import Swimmer, Meet, Event, MeetEntry, TimeStandard, SwimTime
+
 import schemas
+from models import Event, Meet, MeetEntry, Swimmer, SwimTime, TimeStandard
 
 
 def _apply_update(db: Session, db_obj, update):
