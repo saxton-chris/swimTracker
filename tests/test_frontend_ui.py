@@ -1204,3 +1204,117 @@ def test_standard_blank_for_dq_and_missing_standards(page, db, entry_standards):
     ben = standing(page, "Ben Cho")
     expect(ben.locator(".std-none")).to_have_text("—")
     expect(ben).to_have_attribute("title", "No standard for 50 FR SCY, 13-14")
+
+
+# --- entries: progress chart --------------------------------------------------------
+
+
+@pytest.fixture
+def progression(db, seeded):
+    """Adella's 50 FR SCY: 34.10 (Fall Classic) -> 32.45 (Winter Invite, seeded) -> DQ -> 31.80."""
+
+    def swim(name, when, **result):
+        meet = crud.create_meet(db, schemas.MeetCreate(name=name, date=when))
+        entry = crud.create_meet_entry(
+            db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=seeded.adella_id, event_id=seeded.event_id)
+        )
+        crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, **result))
+
+    swim("Fall Classic", date(2025, 10, 1), time_seconds=34.1)
+    swim("Spring Sprint", date(2026, 3, 1), dq=True, dq_reason="False start", time_seconds=30.5)
+    swim("Summer <Champs> & Co", date(2026, 6, 1), time_seconds=31.8)  # markup in a name stays text
+    return seeded
+
+
+def open_chart(page, meet_name="Winter Invite", swimmer="Adella Barber"):
+    heading = page.locator("#entries-body tr.meet-heading").filter(has_text=meet_name)
+    # the entry rows follow their meet's heading; click the event link in the first one for this swimmer
+    rows = page.locator("#entries-body tr.entry").filter(has_text=swimmer)
+    expect(heading).to_be_visible()
+    rows.first.locator("button.event-link").click()
+    expect(page.locator("#chart-dialog")).to_be_visible()
+    page.wait_for_function("document.getElementById('chart').data !== undefined")
+
+
+def chart_data(page):
+    return page.evaluate(
+        "() => { const d = document.getElementById('chart').data[0]; return { x: d.x, y: d.y, mode: d.mode }; }"
+    )
+
+
+def hover(page, point, *expected):
+    """Hover a point (as a mouse would) and wait for its label to show each expected string."""
+    page.evaluate(f"() => Plotly.Fx.hover('chart', [{{ curveNumber: 0, pointNumber: {point} }}])")
+    label = page.locator("#chart .hoverlayer .hovertext")
+    for text in expected:
+        expect(label).to_contain_text(text)
+
+
+def test_chart_plots_results_over_time_without_dqs(page, progression):
+    open_app(page)
+    open_chart(page)
+
+    expect(page.locator("#chart-title")).to_have_text("Adella Barber · 50 FR SCY")
+    data = chart_data(page)
+    assert data["x"] == ["2025-10-01", "2026-01-10", "2026-06-01"]  # oldest first; the DQ is left out
+    assert data["y"] == [34.1, 32.45, 31.8]
+    assert data["mode"] == "lines+markers"
+    expect(page.locator("#chart-summary")).to_have_text(
+        "3 swims · best 31.80 at Summer <Champs> & Co (Jun 1, 2026) · 1 DQ not shown"
+    )
+    # Faster is up: the y-axis runs from slow (bottom) to fast (top), labeled like the table.
+    y_range, tick_text = page.evaluate(
+        "() => { const y = document.getElementById('chart').layout.yaxis; return [y.range, y.ticktext]; }"
+    )
+    assert y_range[0] > y_range[1]
+    assert "32.00" in tick_text
+
+
+def test_chart_hover_shows_meet_and_time(page, progression):
+    open_app(page)
+    open_chart(page)
+    hover(page, 0, "Fall Classic", "Oct 1, 2025", "Time: 34.10")
+    hover(page, 2, "Summer <Champs> & Co", "Time: 31.80")  # shown as text, not markup
+
+
+def test_chart_closes_and_reopens_for_another_event(page, db, progression):
+    back = crud.create_event(db, schemas.EventCreate(distance=100, stroke="BK", course="SCY"))
+    entry = crud.create_meet_entry(
+        db, schemas.MeetEntryCreate(meet_id=progression.meet_id, swimmer_id=progression.adella_id, event_id=back.id)
+    )
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=75.5))
+    open_app(page)
+    open_chart(page)
+    page.get_by_role("button", name="Close").click()
+    expect(page.locator("#chart-dialog")).to_be_hidden()
+
+    row(page, "entries", "100 BK SCY").locator("button.event-link").click()
+    expect(page.locator("#chart-title")).to_have_text("Adella Barber · 100 BK SCY")
+    page.wait_for_function("document.getElementById('chart').data[0].y.length === 1")
+    assert chart_data(page)["mode"] == "markers"  # a single result: a point, no line
+    expect(page.locator("#chart-summary")).to_have_text("1 swim · best 1:15.50 at Winter Invite (Jan 10, 2026)")
+    page.keyboard.press("Escape")
+    expect(page.locator("#chart-dialog")).to_be_hidden()
+
+
+def test_chart_with_only_dqs_says_so(page, db, seeded):
+    crud.update_swim_time(db, 1, schemas.SwimTimeUpdate(dq=True, dq_reason="False start", time_seconds=None))
+    open_app(page)
+    row(page, "entries", "Adella Barber").locator("button.event-link").click()
+    expect(page.locator("#chart-empty")).to_be_visible()
+    expect(page.locator("#chart")).to_be_hidden()
+    expect(page.locator("#chart-summary")).to_have_text("1 DQ not shown")
+
+
+def test_relay_chart_hover_includes_leg_and_split(page, db, swimmer, meet):
+    relay = crud.create_event(db, schemas.EventCreate(distance=200, stroke="IM", course="LCM", relay=True))
+    entry = crud.create_meet_entry(
+        db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=swimmer.id, event_id=relay.id)
+    )
+    crud.create_swim_time(
+        db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=184.99, relay_leg=4, split_seconds=41.94)
+    )
+    open_app(page)
+    row(page, "entries", "200 MED-R LCM").locator("button.event-link").click()
+    page.wait_for_function("document.getElementById('chart').data !== undefined")
+    hover(page, 0, "Time: 3:04.99", "Leg 4", "split 41.94")

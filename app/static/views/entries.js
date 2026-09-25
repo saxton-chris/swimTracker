@@ -6,6 +6,7 @@ import { groupToggle, hiddenCount, storedSet } from "../collapse.js";
 import { setupDialog } from "../dialog.js";
 import { actionButton, el, fillSelect } from "../dom.js";
 import { ageAt, blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
+import { drawProgressChart, progressSummary } from "../progress-chart.js";
 import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
 import { STROKE_ORDER, byId, mutate, newestMeet, state } from "../store.js";
 import { showView } from "../tabs.js";
@@ -203,7 +204,13 @@ function entryRow(row, standard) {
   return el("tr", { class: time && time.dq ? "entry dq" : "entry" },
     el("td", { class: "c-swimmer", textContent: swimmer.name }),
     el("td", { class: "c-event" },
-      event.name,
+      el("button", {
+        type: "button",
+        class: "link event-link",
+        textContent: event.name,
+        title: `${swimmer.name}'s ${event.name} over time`,
+        onclick: () => openProgressChart(swimmer, event),
+      }),
       detail ? el("span", { class: "relay-detail", textContent: detail }) : null),
     timeCell(time),
     standingCell(standard, row),
@@ -213,6 +220,28 @@ function entryRow(row, standard) {
       actionButton("Delete", () => deleteEntry(entry, swimmer, event, meet), true)),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Progress chart (click an event name)
+// ---------------------------------------------------------------------------
+
+async function openProgressChart(swimmer, event) {
+  const dialog = document.getElementById("chart-dialog");
+  document.getElementById("chart-title").textContent = `${swimmer.name} · ${event.name}`;
+  const summary = document.getElementById("chart-summary");
+  summary.textContent = "Loading…";
+  dialog.showModal();
+  try {
+    const { points, dqs } = await drawProgressChart(
+      document.getElementById("chart"), document.getElementById("chart-empty"), swimmer.id, event);
+    summary.textContent = progressSummary(points, dqs);
+  } catch (err) {
+    dialog.close();
+    toast(err.message, true);
+  }
+}
+
+document.getElementById("chart-close").addEventListener("click", () => document.getElementById("chart-dialog").close());
 
 /** Show the Entries tab filtered to one meet and/or swimmer (used by the name links on other tabs). */
 export function filterEntries({ meet = "", swimmer = "" }) {

@@ -14,7 +14,15 @@ from main import app
 
 pytestmark = pytest.mark.ui
 
-TESTED_MODULES = ["format.js", "api.js", "dom.js", "store.js", "standards-data.js", "views/import.js"]
+TESTED_MODULES = [
+    "format.js",
+    "api.js",
+    "dom.js",
+    "store.js",
+    "standards-data.js",
+    "progress-chart.js",
+    "views/import.js",
+]
 
 
 @pytest.fixture(scope="module")
@@ -344,3 +352,58 @@ def test_standing_for(js, seconds, achieved, next_name, to_next):
 )
 def test_age_at_meet_date(js, on, expected):
     assert call(js, "ageAt", "2014-05-01", on) == {"ok": expected}
+
+
+# --- progress chart helpers ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "lo, hi, expected",
+    [
+        (32.45, 36.16, ["32.00", "33.00", "34.00", "35.00", "36.00"]),
+        (58.2, 61.9, ["58.00", "59.00", "1:00.00", "1:01.00", "1:02.00"]),
+        (95.0, 185.0, ["1:30.00", "2:00.00", "2:30.00", "3:00.00"]),
+    ],
+)
+def test_time_ticks(js, lo, hi, expected):
+    ticks = call(js, "timeTicks", lo, hi)["ok"]
+    assert ticks["labels"] == expected
+    low, high = ticks["range"]
+    assert low < lo and high > hi  # the data sits inside the drawn range
+
+
+def test_time_ticks_single_result_gets_at_least_a_second(js):
+    ticks = call(js, "timeTicks", 36.16, 36.16)["ok"]
+    low, high = ticks["range"]
+    assert high - low >= 1
+    assert low < 36.16 < high
+    assert "36.00" in ticks["labels"]
+    assert 3 <= len(ticks["values"]) <= 7
+
+
+def test_progress_points_skip_dqs_and_untimed_and_sort_by_date(js):
+    result = js.evaluate(
+        """() => {
+            const saved = { ...state };
+            Object.assign(state, {
+                meets: [{ id: 1, name: "Late", date: "2026-03-01" }, { id: 2, name: "Early", date: "2025-10-01" },
+                        { id: 3, name: "Mid", date: "2026-01-10" }, { id: 4, name: "No time", date: "2026-02-01" }],
+                entries: [{ id: 10, meet_id: 1, swimmer_id: 7, event_id: 5 }, { id: 11, meet_id: 2, swimmer_id: 7, event_id: 5 },
+                          { id: 12, meet_id: 3, swimmer_id: 7, event_id: 5 }, { id: 13, meet_id: 4, swimmer_id: 7, event_id: 5 },
+                          { id: 14, meet_id: 1, swimmer_id: 8, event_id: 5 },   // another swimmer
+                          { id: 15, meet_id: 1, swimmer_id: 7, event_id: 6 }],  // another event
+                times: [{ meet_entry_id: 10, time_seconds: 31.0, dq: false }, { meet_entry_id: 11, time_seconds: 34.0, dq: false },
+                        { meet_entry_id: 12, time_seconds: 29.0, dq: true }, { meet_entry_id: 14, time_seconds: 20.0, dq: false },
+                        { meet_entry_id: 15, time_seconds: 20.0, dq: false }],
+            });
+            try {
+                const { points, dqs } = progressPoints(7, 5);
+                return { meets: points.map((p) => p.meet), dqs, summary: progressSummary(points, dqs) };
+            } finally { Object.assign(state, saved); }
+        }"""
+    )
+    assert result == {
+        "meets": ["Early", "Late"],  # the DQ (Mid) and the untimed entry are left out
+        "dqs": 1,
+        "summary": "2 swims · best 31.00 at Late (Mar 1, 2026) · 1 DQ not shown",
+    }

@@ -3,7 +3,8 @@ import js from "@eslint/js";
 import globals from "globals";
 
 export default [
-  { ignores: ["venv/**", "node_modules/**", "htmlcov/**", ".pytest_cache/**"] },
+  // app/static/vendor holds third-party builds (e.g. Plotly), not our code.
+  { ignores: ["venv/**", "node_modules/**", "htmlcov/**", ".pytest_cache/**", "app/static/vendor/**"] },
 
   js.configs.recommended,
 
