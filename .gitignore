@@ -7,3 +7,4 @@ time_standards/
 .coverage
 .pytest_cache/
 meet_results/
+node_modules/

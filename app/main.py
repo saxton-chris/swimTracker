@@ -1,3 +1,4 @@
+import mimetypes
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,6 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from routers import events, meet_entries, meets, swim_times, swimmers, time_standards
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Browsers refuse to run an ES module unless it's served as JavaScript. On Windows,
+# Python reads file types from the registry, where .js is sometimes "text/plain".
+mimetypes.add_type("text/javascript", ".js")
 
 app = FastAPI()
 app.include_router(swimmers.router)

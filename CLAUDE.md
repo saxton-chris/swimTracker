@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. Ruff handles linting and formatting (`ruff.toml` at the repo root).
+A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. Ruff lints and formats the Python (`ruff.toml`), and ESLint lints the frontend JS (`eslint.config.js`, dev-only Node tooling in `package.json`).
 
 ## Commands
 
@@ -30,6 +30,9 @@ pytest tests/test_api.py::test_event_duplicate     # single test
 pytest -m "not ui"                                 # skip the browser tests
 ruff check .                                       # lint (add --fix for safe auto-fixes)
 ruff format .                                      # format
+
+npm install                                        # once: ESLint into node_modules/ (needs Node.js)
+npm run lint                                       # ESLint on app/static (npm run lint:fix to auto-fix)
 ```
 
 Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. Frontend tests (marked `ui`) use Playwright against a live uvicorn thread (`live_server` fixture). They launch the installed Chrome or Edge, falling back to Playwright's Chromium, and skip if no browser is found. They use a temporary SQLite *file* instead of `StaticPool`, because the page sends parallel requests that the server answers on separate threads, and those threads can't safely share a single connection. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
@@ -51,10 +54,17 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 
 ## Frontend
 
-`app/static/` (`index.html`, `app.js`, `styles.css`) is plain HTML/JS with no build step or dependencies. `main.py` serves `index.html` at `/` and mounts the directory at `/static`. The page calls the JSON API with `fetch`, loads every list on startup, and reloads them all after each change (the dataset is small). It has four tabs: Entries & Results, Swimmers, Meets, and Time Standards.
+`app/static/` is plain HTML/CSS and native ES modules, with no build step and no runtime dependencies. Node is only needed for ESLint. `main.py` serves `index.html` at `/` and mounts the directory at `/static`, and it forces `.js` to `text/javascript`, because browsers won't run a module served as anything else and the Windows registry can map `.js` to `text/plain`. `index.html` loads `<script type="module" src="/static/main.js">`, and `main.js` imports the rest:
+
+- `api.js`, `format.js`, `dom.js`, and `toast.js` are helpers with no app state.
+- `store.js` holds `state` (every list), `loadAll`, `refresh`, and `mutate`. Views register their render functions with `onRefresh()` instead of `store.js` importing them, which keeps the imports acyclic.
+- `dialog.js` has `setupDialog`, `collapse.js` has `storedSet`/`groupToggle`/`hiddenCount`, and `tabs.js` has `showView`.
+- `views/entries.js`, `swimmers.js`, `meets.js`, `standards.js`, and `import.js` are one module per tab (plus the import dialog). Each wires its own event listeners at module load and exports its render function. `swimmers.js` and `meets.js` import `filterEntries` from `entries.js` for their name links.
+
+The page calls the JSON API with `fetch`, loads every list on startup, and reloads them all after each change (the dataset is small). It has four tabs: Entries & Results, Swimmers, Meets, and Time Standards.
 
 - Time Standards is read-only. `GET /time_standards/sets` lists the organization/season pairs that have data, and the page shows exactly one at a time. It starts on a disabled "Select a standard…" placeholder, which is never remembered across loads. A set's rows (`GET /time_standards/?organization=&season=`) are fetched when it's first selected and cached for the page's lifetime, not reloaded with the other lists. The Distance/Stroke/Course/Gender filters and the Age groups multi-select offer only values that set covers (MN and USA age groups differ). Age groups is a `<details>` checkbox dropdown: none ticked means all, and ticked groups carry over to another set only if it has them. The table groups rows by age group (ordered by the first number in the name), with one column per tier in `standard_rank` order. Age-group headings are collapsible only when more than one is shown.
-- Collapsing (meets on Entries, age groups on Time Standards) shares `storedSet()` and `groupToggle()` in `app.js`. Each keeps its own `localStorage` key: `swimTracker.collapsedMeets` holds meet ids, and `swimTracker.collapsedAgeGroups` holds `org|season|age group`.
+- Collapsing (meets on Entries, age groups on Time Standards) shares `storedSet()` and `groupToggle()` in `collapse.js`. Each keeps its own `localStorage` key: `swimTracker.collapsedMeets` holds meet ids, and `swimTracker.collapsedAgeGroups` holds `org|season|age group`.
 
 - Meets are listed oldest first by start date everywhere: the Meets tab, the dropdowns, and the Entries table. The Entries table groups rows under one `tr.meet-heading` per meet (name, dates, location) and has no Meet/Date columns. New-entry and import dialogs default to the newest meet when the table isn't filtered. Each heading's meet name is a disclosure button (`aria-expanded`) that collapses that meet's rows. Collapsed meet ids are kept in `localStorage` (`swimTracker.collapsedMeets`, per browser, wrapped in try/catch so the page works without storage).
 - Meet entries and their result are edited in one dialog. The event is chosen by distance/stroke/course and created through `POST /events/` if it doesn't exist. The time is entered as `ss.xx` or `m:ss.xx` and sent as float seconds. Clearing the time deletes the `SwimTime`.
@@ -62,7 +72,7 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 - "Import results" on the Entries tab uploads a Hy-Tek results PDF for a chosen meet to `POST /meets/{id}/import-results`. The PDF is the raw request body (`Content-Type: application/pdf`, no multipart, so no `python-multipart` dependency). The endpoint runs the same `parse_pdf` + `import_results` as the CLI script, with no team filter, and returns a count summary that the page shows as a toast.
 - All user data is rendered with `textContent`, never `innerHTML`.
 - Styling uses West Express colors: orange `#F2661B` and black as primary, purple `#5A2D82` as secondary, set as CSS custom properties at the top of `styles.css`, with a dark-mode override. Fonts are Barlow Condensed and Barlow from Google Fonts, falling back to system fonts when offline. Times are shown in a scoreboard-style `.clock` element. Below 640px the entries table stacks each row, and the swimmer/meet tables hide the `.c-birthdate`, `.c-notes`, and `.c-location` columns.
-- Tests: `tests/test_frontend_js.py` calls `app.js`'s helpers (`parseTime`, `formatTime`, etc.) directly in a browser page, `tests/test_frontend_ui.py` drives the UI end to end, and `tests/test_frontend_static.py` checks that every element id `app.js` looks up exists in `index.html`.
+- Tests: `tests/test_frontend_js.py` imports the modules in a browser page, copies their exports onto `window` (see `TESTED_MODULES`), and calls the helpers (`parseTime`, `formatTime`, etc.) directly. `tests/test_frontend_ui.py` drives the UI end to end. `tests/test_frontend_static.py` checks, without a browser, that every element id the JS looks up exists in `index.html`, that every relative import resolves to a file, and that every module is reachable from `main.js`.
 
 ## Import scripts
 
