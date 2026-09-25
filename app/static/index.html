@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Swim Tracker</title>
+  <meta name="theme-color" content="#000000">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Swim Tracker</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-view="entries">Entries &amp; Results</button>
+      <button class="tab" role="tab" data-view="swimmers">Swimmers</button>
+      <button class="tab" role="tab" data-view="meets">Meets</button>
+    </nav>
+  </header>
+
+  <main>
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <!-- Entries & Results ------------------------------------------------ -->
+    <section id="view-entries" class="view" hidden>
+      <div class="toolbar">
+        <label>Meet
+          <select id="filter-meet"><option value="">All meets</option></select>
+        </label>
+        <label>Swimmer
+          <select id="filter-swimmer"><option value="">All swimmers</option></select>
+        </label>
+        <span class="spacer"></span>
+        <button class="primary" id="add-entry">+ Add entry</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Meet</th><th>Date</th><th>Swimmer</th><th>Event</th><th class="num">Time</th><th>Notes</th><th></th></tr>
+          </thead>
+          <tbody id="entries-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="entries-empty" hidden></p>
+    </section>
+
+    <!-- Swimmers --------------------------------------------------------- -->
+    <section id="view-swimmers" class="view" hidden>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="primary" id="add-swimmer">+ Add swimmer</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Name</th><th class="c-birthdate">Birthdate</th><th class="num">Age</th><th>Gender</th><th class="c-notes">Notes</th><th></th></tr>
+          </thead>
+          <tbody id="swimmers-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="swimmers-empty" hidden>No swimmers yet. Add a swimmer to start entering meets.</p>
+    </section>
+
+    <!-- Meets ------------------------------------------------------------ -->
+    <section id="view-meets" class="view" hidden>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="primary" id="add-meet">+ Add meet</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Name</th><th class="c-location">Location</th><th class="num">Entries</th><th></th></tr>
+          </thead>
+          <tbody id="meets-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="meets-empty" hidden>No meets yet. Add a meet, then enter swimmers in its events.</p>
+    </section>
+  </main>
+
+  <!-- Dialogs ------------------------------------------------------------ -->
+  <dialog id="swimmer-dialog">
+    <form method="dialog" id="swimmer-form">
+      <h2></h2>
+      <label>Name <input name="name" required maxlength="100" autocomplete="off"></label>
+      <label>Birthdate <input name="birthdate" type="date" required></label>
+      <label>Gender
+        <select name="gender" required>
+          <option value="F">F</option>
+          <option value="M">M</option>
+        </select>
+      </label>
+      <label>Notes <textarea name="notes" maxlength="500" rows="2"></textarea></label>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="meet-dialog">
+    <form method="dialog" id="meet-form">
+      <h2></h2>
+      <label>Name <input name="name" required maxlength="150" autocomplete="off"></label>
+      <label>Date <input name="date" type="date" required></label>
+      <label>Location <input name="location" maxlength="200" autocomplete="off"></label>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="entry-dialog">
+    <form method="dialog" id="entry-form">
+      <h2></h2>
+      <label>Meet <select name="meet_id" required></select></label>
+      <label>Swimmer <select name="swimmer_id" required></select></label>
+      <div class="row">
+        <label>Distance <input name="distance" type="number" min="1" step="1" required list="distances"></label>
+        <label>Stroke
+          <select name="stroke" required>
+            <option value="FR">Free (FR)</option>
+            <option value="BK">Back (BK)</option>
+            <option value="BR">Breast (BR)</option>
+            <option value="FL">Fly (FL)</option>
+            <option value="IM">IM</option>
+          </select>
+        </label>
+        <label>Course
+          <select name="course" required>
+            <option value="SCY">SCY</option>
+            <option value="SCM">SCM</option>
+            <option value="LCM">LCM</option>
+          </select>
+        </label>
+      </div>
+      <datalist id="distances">
+        <option value="25"><option value="50"><option value="100"><option value="200">
+        <option value="400"><option value="500"><option value="800"><option value="1000">
+        <option value="1500"><option value="1650">
+      </datalist>
+      <fieldset>
+        <legend>Result</legend>
+        <label>Time <input name="time" placeholder="e.g. 32.45 or 1:02.45" autocomplete="off"></label>
+        <label>Result notes <input name="time_notes" maxlength="300" autocomplete="off"></label>
+        <p class="hint">Leave the time blank if the swim hasn't happened yet. Clearing an existing time removes the result.</p>
+      </fieldset>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

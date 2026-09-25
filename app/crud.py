@@ -14,6 +14,15 @@ def _apply_update(db: Session, db_obj, update):
     return db_obj
 
 
+def _delete(db: Session, db_obj):
+    """Delete db_obj (ORM cascades remove dependents). Returns False if it didn't exist."""
+    if db_obj is None:
+        return False
+    db.delete(db_obj)
+    db.commit()
+    return True
+
+
 def create_swimmer(db: Session, swimmer: schemas.SwimmerCreate):
     db_swimmer = Swimmer(**swimmer.model_dump())
     db.add(db_swimmer)
@@ -30,6 +39,10 @@ def update_swimmer(db: Session, swimmer_id: int, update: schemas.SwimmerUpdate):
     return _apply_update(db, db.get(Swimmer, swimmer_id), update)
 
 
+def delete_swimmer(db: Session, swimmer_id: int):
+    return _delete(db, db.get(Swimmer, swimmer_id))
+
+
 def create_meet(db: Session, meet: schemas.MeetCreate):
     db_meet = Meet(**meet.model_dump())
     db.add(db_meet)
@@ -44,6 +57,10 @@ def get_meets(db: Session):
 
 def update_meet(db: Session, meet_id: int, update: schemas.MeetUpdate):
     return _apply_update(db, db.get(Meet, meet_id), update)
+
+
+def delete_meet(db: Session, meet_id: int):
+    return _delete(db, db.get(Meet, meet_id))
 
 
 def create_event(db: Session, event: schemas.EventCreate):
@@ -113,6 +130,10 @@ def get_meet_entry_by_id(db: Session, meet_entry_id: int):
 
 def update_meet_entry(db: Session, meet_entry_id: int, update: schemas.MeetEntryUpdate):
     return _apply_update(db, get_meet_entry_by_id(db, meet_entry_id), update)
+
+
+def delete_meet_entry(db: Session, meet_entry_id: int):
+    return _delete(db, get_meet_entry_by_id(db, meet_entry_id))
 
 
 def get_time_standard(
@@ -188,3 +209,7 @@ def get_swim_times(db: Session, meet_entry_id: int | None = None):
 
 def update_swim_time(db: Session, swim_time_id: int, update: schemas.SwimTimeUpdate):
     return _apply_update(db, get_swim_time_by_id(db, swim_time_id), update)
+
+
+def delete_swim_time(db: Session, swim_time_id: int):
+    return _delete(db, get_swim_time_by_id(db, swim_time_id))

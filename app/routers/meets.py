@@ -19,3 +19,8 @@ def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")
     return updated
+
+@router.delete("/{meet_id}", status_code=204)
+def delete_meet(meet_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_meet(db, meet_id):
+        raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")

@@ -13,15 +13,27 @@ from main import app
 from models import Base, Course, Stroke
 
 
-@pytest.fixture
-def engine():
-    # In-memory DB shared across connections (StaticPool) so the TestClient's
-    # threads and the test body see the same data. Never touches swim_tracker.db.
-    eng = create_engine(
-        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-    )
+def make_test_engine(path=None):
+    """Never touches swim_tracker.db.
+
+    Default: in-memory DB on one shared connection (StaticPool) so the
+    TestClient's threads and the test body see the same data. With `path`: a
+    throwaway file DB with a normal pool, for the live server, whose threads
+    handle concurrent requests and must not share a single connection."""
+    if path is None:
+        eng = create_engine(
+            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+        )
+    else:
+        eng = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
     event.listen(eng, "connect", database._enable_sqlite_foreign_keys)
     Base.metadata.create_all(eng)
+    return eng
+
+
+@pytest.fixture
+def engine():
+    eng = make_test_engine()
     yield eng
     eng.dispose()
 
@@ -118,3 +130,100 @@ def fake_pdfplumber(monkeypatch):
             module.pdfplumber, "open", lambda path: FakePDF(pages_by_path[str(path)])
         )
     return install
+
+
+# --- frontend (browser) tests ----------------------------------------------
+
+@pytest.fixture(scope="session")
+def live_server():
+    """Runs the real app (API + static frontend) on a free local port in a
+    background thread. Which DB it talks to is decided per test by whoever sets
+    app.dependency_overrides[database.get_db] (see `serve_db`)."""
+    import socket
+    import threading
+    import time
+
+    import uvicorn
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        if time.monotonic() > deadline:
+            pytest.fail("live server did not start")
+        time.sleep(0.01)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=5)
+
+
+def serve_db(factory):
+    """Point every request (TestClient or live server) at sessions from `factory`."""
+    def override_get_db():
+        session = factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[database.get_db] = override_get_db
+
+
+@pytest.fixture(scope="session")
+def browser():
+    """A headless browser: the installed Chrome or Edge if present (no download
+    needed), else Playwright's bundled Chromium. Skips if none is available."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    pw = sync_api.sync_playwright().start()
+    launched = None
+    for channel in ("chrome", "msedge", None):
+        try:
+            launched = pw.chromium.launch(channel=channel) if channel else pw.chromium.launch()
+            break
+        except sync_api.Error:
+            continue
+    if launched is None:
+        pw.stop()
+        pytest.skip("no browser for Playwright; run `playwright install chromium`")
+    yield launched
+    launched.close()
+    pw.stop()
+
+
+class ConfirmRecorder:
+    """Answers window.confirm() dialogs and records their messages."""
+
+    def __init__(self):
+        self.messages = []
+        self.accept = True
+
+    def __call__(self, dialog):
+        self.messages.append(dialog.message)
+        dialog.accept() if self.accept else dialog.dismiss()
+
+
+@pytest.fixture
+def confirms():
+    return ConfirmRecorder()
+
+
+@pytest.fixture
+def page(browser, live_server, session_factory, confirms):
+    """A fresh browser page whose API calls hit this test's in-memory DB.
+    Locale/timezone are pinned so date formatting is deterministic; a zone
+    west of UTC catches dates wrongly parsed as UTC midnight."""
+    serve_db(session_factory)
+    context = browser.new_context(
+        base_url=live_server, locale="en-US", timezone_id="America/Chicago"
+    )
+    pg = context.new_page()
+    pg.set_default_timeout(5000)
+    pg.on("dialog", confirms)
+    yield pg
+    context.close()
+    app.dependency_overrides.clear()

@@ -30,3 +30,8 @@ def update_swim_time(swim_time_id: int, update: schemas.SwimTimeUpdate, db: Sess
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Swim time {swim_time_id} not found")
     return updated
+
+@router.delete("/{swim_time_id}", status_code=204)
+def delete_swim_time(swim_time_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_swim_time(db, swim_time_id):
+        raise HTTPException(status_code=404, detail=f"Swim time {swim_time_id} not found")
