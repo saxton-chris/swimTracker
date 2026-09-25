@@ -116,6 +116,70 @@ main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 48px; }
 }
 .toolbar label { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; font-weight: 500; color: var(--muted); }
 .spacer { flex: 1; }
+.toolbar .field { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; font-weight: 500; color: var(--muted); }
+
+/* Multi-select dropdown: a <details> whose summary looks like a <select> and opens a checkbox list. */
+details.multiselect { position: relative; }
+details.multiselect summary {
+  display: block;
+  min-width: 150px;
+  max-width: 280px;
+  padding: 7px 30px 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit; /* same muted tone as the <select>s beside it */
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  position: relative;
+}
+details.multiselect summary::-webkit-details-marker { display: none; }
+details.multiselect summary::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+details.multiselect summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+details.multiselect[aria-disabled="true"] summary { opacity: 0.5; cursor: default; }
+.multiselect-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.25);
+  color: var(--text);
+  white-space: nowrap;
+}
+.toolbar label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--text);
+  cursor: pointer;
+}
+label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--orange); }
+.multiselect-menu button.link { align-self: flex-start; margin-top: 2px; padding: 4px 0; font-size: 0.9rem; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
@@ -185,8 +249,9 @@ td.notes { white-space: normal; min-width: 120px; max-width: 280px; color: var(-
 /* Entries: notes take whatever width the other (nowrap) columns leave. */
 #view-entries td.notes { width: 100%; max-width: none; }
 
-/* Entries are grouped under one heading row per meet. */
-tbody tr.meet-heading th {
+/* Entries are grouped under one heading row per meet, time standards under one per age group. */
+tbody tr.meet-heading th,
+tbody tr.group-heading th {
   padding: 18px 14px 8px;
   background: var(--bg);
   border-left: 4px solid var(--orange);
@@ -195,7 +260,12 @@ tbody tr.meet-heading th {
   letter-spacing: 0.01em;
   white-space: normal;
 }
-tbody tr.meet-heading:hover { background: none; }
+tbody tr.meet-heading:hover,
+tbody tr.group-heading:hover { background: none; }
+
+/* Time standards: one column per tier; even-width digits keep the times scannable. */
+td.c-standard { font-variant-numeric: tabular-nums; }
+#view-standards .toolbar label:first-child { min-width: 240px; }
 .meet-heading .meet-dates,
 .meet-heading .meet-location {
   display: inline-block;
@@ -206,7 +276,7 @@ tbody tr.meet-heading:hover { background: none; }
 }
 .meet-heading .meet-location { margin-left: 6px; }
 .meet-heading .meet-location::before { content: "· "; }
-.meet-heading .meet-count {
+.group-heading .group-count {
   margin-left: 14px;
   font: 500 0.85rem/1.2 var(--font-body);
   color: var(--muted);
@@ -214,7 +284,7 @@ tbody tr.meet-heading:hover { background: none; }
 }
 
 /* The meet name is a disclosure button: the chevron points down when open, right when collapsed. */
-button.meet-toggle {
+button.group-toggle {
   display: inline-flex;
   align-items: baseline; /* so the name lines up with the dates beside it */
   gap: 10px;
@@ -225,9 +295,9 @@ button.meet-toggle {
   letter-spacing: inherit;
   text-align: left;
 }
-button.meet-toggle:hover { background: none; }
-button.meet-toggle:hover .meet-name { text-decoration: underline; text-underline-offset: 3px; }
-button.meet-toggle::before {
+button.group-toggle:hover { background: none; }
+button.group-toggle:hover > span { text-decoration: underline; text-underline-offset: 3px; }
+button.group-toggle::before {
   content: "";
   flex: none;
   align-self: center;
@@ -238,7 +308,7 @@ button.meet-toggle::before {
   border-bottom: 2.5px solid var(--orange);
   transform: rotate(45deg);
 }
-button.meet-toggle[aria-expanded="false"]::before { transform: rotate(-45deg); margin-bottom: 0; }
+button.group-toggle[aria-expanded="false"]::before { transform: rotate(-45deg); margin-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 td.actions { text-align: right; }
 td.pending { color: var(--muted); }
@@ -319,7 +389,18 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   .topbar { gap: 0 16px; }
   .topbar h1 { font-size: 1.5rem; }
   dialog .row { grid-template-columns: 1fr; }
-  .toolbar label, .toolbar select { width: 100%; }
+  .toolbar label, .toolbar select, .toolbar .field { width: 100%; }
+  details.multiselect summary { max-width: none; }
+
+  /* Time standards: the tier columns scroll sideways; keep the event in view while they do. */
+  #view-standards thead th:first-child,
+  #view-standards td.c-event {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--surface);
+    box-shadow: 1px 0 0 var(--border);
+  }
 
   /* Swimmers / meets: drop the low-priority columns so actions stay on screen. */
   .c-birthdate, .c-notes, .c-location { display: none; }
@@ -345,7 +426,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   #view-entries tbody tr.meet-heading th { padding: 14px 14px 8px; border-bottom: 1px solid var(--border); }
   .meet-heading .meet-dates,
   .meet-heading .meet-location,
-  .meet-heading .meet-count { display: block; margin: 2px 0 0 calc(0.45em + 14px); }
+  .group-heading .group-count { display: block; margin: 2px 0 0 calc(0.45em + 14px); }
   .meet-heading .meet-location::before { content: none; }
   #view-entries td { padding: 0; border: none; white-space: normal; }
   #view-entries td.c-swimmer { grid-area: swimmer; font-weight: 600; }

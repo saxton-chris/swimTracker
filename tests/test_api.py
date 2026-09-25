@@ -343,6 +343,23 @@ def test_time_standard_list_filters(client, swim_event):
     assert count(organization="USA Swimming", gender="M") == 0
 
 
+def test_time_standard_sets(client, swim_event):
+    assert client.get("/time_standards/sets").json() == []
+    for overrides in (
+        {"organization": "USA Swimming", "season": "2024-2028"},
+        {"organization": "USA Swimming", "season": "2024-2028", "gender": "M"},  # same set, listed once
+        {"organization": "MN Swimming", "season": "2025-2026"},
+        {"organization": "MN Swimming", "season": "2024-2025"},
+    ):
+        client.post("/time_standards/", json=_standard(swim_event.id, **overrides))
+
+    assert client.get("/time_standards/sets").json() == [
+        {"organization": "MN Swimming", "season": "2024-2025"},
+        {"organization": "MN Swimming", "season": "2025-2026"},
+        {"organization": "USA Swimming", "season": "2024-2028"},
+    ]
+
+
 # --- deletes ---------------------------------------------------------------
 
 

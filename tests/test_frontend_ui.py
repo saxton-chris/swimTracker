@@ -388,7 +388,9 @@ def test_filters(page, two_meets):
     # each followed by its own entries.
     headings = page.locator("#entries-body tr.meet-heading .meet-name")
     expect(headings).to_have_text(["Winter Invite", "Spring Champs"])
-    kinds = page.locator("#entries-body tr").evaluate_all("rows => rows.map(r => r.className)")
+    kinds = page.locator("#entries-body tr").evaluate_all(
+        "rows => rows.map(r => r.classList.contains('meet-heading') ? 'meet-heading' : r.className)"
+    )
     assert kinds == ["meet-heading", "entry", "entry", "meet-heading", "entry"]
 
     page.select_option("#filter-meet", str(two_meets.meet_id))
@@ -422,7 +424,7 @@ def test_collapse_and_expand_a_meet(page, two_meets):
     expect(winter).to_be_focused()  # focus survives the re-render, for keyboard users
     expect(page.locator("#entries-body tr.entry")).to_have_count(1)  # only Spring Champs' entry is left
     expect(row(page, "entries", "Winter Invite")).to_contain_text("2 entries hidden")
-    expect(row(page, "entries", "Spring Champs").locator(".meet-count")).to_have_count(0)
+    expect(row(page, "entries", "Spring Champs").locator(".group-count")).to_have_count(0)
 
     # The choice is remembered across reloads (and filter changes re-render with it).
     page.reload(wait_until="networkidle")
@@ -433,7 +435,7 @@ def test_collapse_and_expand_a_meet(page, two_meets):
     page.get_by_role("button", name="Winter Invite").press("Enter")
     expect(page.get_by_role("button", name="Winter Invite")).to_have_attribute("aria-expanded", "true")
     expect(page.locator("#entries-body tr.entry")).to_have_count(2)  # Ben at both meets
-    expect(page.locator(".meet-count")).to_have_count(0)
+    expect(page.locator(".group-count")).to_have_count(0)
 
 
 def test_clicking_meet_or_swimmer_name_filters_entries(page, two_meets):
@@ -710,3 +712,254 @@ def test_import_results_needs_a_meet(page):
     page.get_by_role("button", name="Import results").click()
     expect(toast(page)).to_have_text("Add the meet on the Meets tab first.")
     expect(page.locator("#import-dialog")).to_be_hidden()
+
+
+# --- time standards ------------------------------------------------------------
+
+
+@pytest.fixture
+def standards(db):
+    """USA (tiers inserted out of rank order, one tier missing) and MN, over three events."""
+
+    def event(distance, stroke, course):
+        return crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course)).id
+
+    free_scy, free_lcm, back_scy = event(50, "FR", "SCY"), event(50, "FR", "LCM"), event(100, "BK", "SCY")
+
+    def add(event_id, org, season, age, gender, tier, rank, seconds):
+        crud.create_time_standard(
+            db,
+            schemas.TimeStandardCreate(
+                event_id=event_id,
+                organization=org,
+                season=season,
+                age_group=age,
+                gender=gender,
+                standard_name=tier,
+                standard_rank=rank,
+                time_seconds=seconds,
+            ),
+        )
+
+    usa = ("USA Swimming", "2024-2028")
+    for age in ("11-12", "10 & under"):
+        for gender in ("M", "F"):
+            for tier, rank, secs in (("A", 3, 30.09), ("B", 1, 35.19), ("BB", 2, 32.59)):
+                add(free_scy, *usa, age, gender, tier, rank, secs)
+    add(free_lcm, *usa, "11-12", "F", "B", 1, 40.29)  # only a B time for this event
+    add(back_scy, *usa, "11-12", "F", "B", 1, 65.1)
+    add(free_scy, "MN Swimming", "2025-2026", "11-12", "F", "GOLD", 3, 31.19)
+    add(free_lcm, "MN Swimming", "2025-2026", "8 & Under", "M", "GOLD", 3, 50.5)  # an age group USA doesn't have
+
+
+def std_rows(page):
+    return page.locator("#standards-body tr.standard")
+
+
+def pick_standard(page, label):
+    page.select_option("#standard-set", label=label)
+    expect(page.locator("#standards-table")).to_be_visible()
+
+
+def test_standards_start_with_no_standard_selected(page, standards):
+    open_app(page, "standards")
+    select = page.locator("#standard-set")
+    assert select.input_value() == ""
+    assert select.evaluate("s => s.multiple") is False
+    options = select.locator("option")
+    expect(options).to_have_text(["Select a standard…", "MN Swimming (2025-2026)", "USA Swimming (2024-2028)"])
+    assert options.first.evaluate("o => o.disabled")  # no "all" choice, and the placeholder can't be picked
+    for f in ("distance", "stroke", "course"):
+        expect(page.locator(f"#standard-{f}")).to_be_disabled()
+    expect(page.locator("#standards-empty")).to_have_text("Select a standard to see its times.")
+    expect(page.locator("#standards-table")).to_be_hidden()
+
+
+def test_standard_shows_tiers_in_rank_order_grouped_by_age(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+
+    expect(page.locator("#standards-head th")).to_have_text(["Event", "Gender", "B", "BB", "A"])
+    expect(page.locator("#standards-body tr.age-heading")).to_have_text(["10 & under", "11-12"])
+    first = std_rows(page).first
+    expect(first.locator("td")).to_have_text(["50 FR SCY", "Girls", "35.19", "32.59", "30.09"])
+    expect(page.locator("#standards-body tr").filter(has_text="50 FR LCM").locator("td")).to_have_text(
+        ["50 FR LCM", "Girls", "40.29", "—", "—"]
+    )
+    expect(page.locator("#standards-body tr").filter(has_text="100 BK SCY")).to_contain_text("1:05.10")
+    aligns = page.locator("#standards-head th").evaluate_all("ths => ths.map(th => getComputedStyle(th).textAlign)")
+    assert set(aligns) <= {"left", "start"}, aligns
+
+
+def test_standard_filters_combine(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    expect(std_rows(page)).to_have_count(6)  # 4 x 50 FR SCY, 50 FR LCM, 100 BK SCY
+
+    # Choices come from the selected standard's events.
+    expect(page.locator("#standard-distance option")).to_have_text(["All", "50", "100"])
+    expect(page.locator("#standard-stroke option")).to_have_text(["All", "Free (FR)", "Back (BK)"])
+    expect(page.locator("#standard-course option")).to_have_text(["All", "SCY", "LCM"])
+
+    page.select_option("#standard-distance", "50")
+    expect(std_rows(page)).to_have_count(5)
+    page.select_option("#standard-course", "LCM")
+    expect(std_rows(page)).to_have_count(1)
+    page.select_option("#standard-distance", "")
+    page.select_option("#standard-stroke", "BK")
+    expect(std_rows(page)).to_have_count(0)
+    expect(page.locator("#standards-empty")).to_have_text("No standards match these filters.")
+    page.select_option("#standard-course", "SCY")
+    expect(std_rows(page)).to_have_count(1)
+    expect(std_rows(page)).to_contain_text("100 BK SCY")
+
+
+def test_switching_standard_shows_only_that_one(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    page.select_option("#standard-stroke", "BK")
+    pick_standard(page, "MN Swimming (2025-2026)")
+
+    expect(page.locator("#standards-head th")).to_have_text(["Event", "Gender", "GOLD"])
+    expect(page.locator("#standard-stroke")).to_have_value("")  # MN has no BK here, so the filter resets
+    expect(std_rows(page)).to_have_count(2)
+    expect(std_rows(page).filter(has_text="SCY").locator("td")).to_have_text(["50 FR SCY", "Girls", "31.19"])
+
+
+def test_standard_selection_is_not_remembered_across_loads(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "MN Swimming (2025-2026)")
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#standard-set")).to_have_value("")
+    expect(page.locator("#standards-table")).to_be_hidden()
+
+
+def test_no_standards_loaded(page):
+    open_app(page, "standards")
+    expect(page.locator("#standards-empty")).to_contain_text("No time standards loaded yet")
+    expect(page.locator("#standard-set option")).to_have_count(1)
+
+
+def test_standards_table_scrolls_inside_its_box_on_phone(page, standards):
+    page.set_viewport_size({"width": 375, "height": 800})
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0
+
+
+# --- time standards: gender, age groups, collapsing ------------------------------
+
+
+def age_boxes(page):
+    return page.locator("#standard-age-options label")
+
+
+def open_age_menu(page):
+    page.locator("#standard-age summary").click()
+    expect(page.locator("#standard-age .multiselect-menu")).to_be_visible()
+
+
+def tick_age(page, age):
+    page.locator("#standard-age-options label").filter(has_text=age).locator("input").click()
+
+
+def age_headings(page):
+    return page.locator("#standards-body tr.age-heading .age-name")
+
+
+def test_gender_and_age_choices_come_from_the_selected_standard(page, standards):
+    open_app(page, "standards")
+    expect(page.locator("#standard-gender")).to_be_disabled()
+    page.locator("#standard-age summary").click()  # disabled: doesn't open
+    expect(page.locator("#standard-age .multiselect-menu")).to_be_hidden()
+
+    pick_standard(page, "USA Swimming (2024-2028)")
+    expect(page.locator("#standard-gender option")).to_have_text(["All", "Girls", "Boys"])
+    open_age_menu(page)
+    expect(age_boxes(page)).to_have_text(["10 & under", "11-12"])  # no "8 & Under" for USA
+
+    pick_standard(page, "MN Swimming (2025-2026)")
+    open_age_menu(page)
+    expect(age_boxes(page)).to_have_text(["8 & Under", "11-12"])
+
+
+def test_gender_filter(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    page.select_option("#standard-gender", "M")
+    expect(std_rows(page)).to_have_count(2)  # 50 FR SCY Boys in each age group
+    for gender in std_rows(page).locator("td.c-gender").all_inner_texts():
+        assert gender == "Boys"
+
+
+def test_age_groups_multiselect(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    expect(page.locator("#standard-age-summary")).to_have_text("All")
+
+    open_age_menu(page)
+    tick_age(page, "11-12")
+    expect(age_headings(page)).to_have_text(["11-12"])
+    expect(page.locator("#standard-age-summary")).to_have_text("11-12")
+    expect(page.locator("#standard-age-options input[value='11-12']")).to_be_focused()  # focus kept after re-render
+
+    tick_age(page, "10 & under")  # aging up: see both groups side by side
+    expect(age_headings(page)).to_have_text(["10 & under", "11-12"])
+    expect(page.locator("#standard-age-summary")).to_have_text("10 & under, 11-12")
+
+    page.get_by_role("button", name="Show all age groups").click()
+    expect(page.locator("#standard-age .multiselect-menu")).to_be_hidden()
+    expect(page.locator("#standard-age-summary")).to_have_text("All")
+    expect(std_rows(page)).to_have_count(6)
+
+
+def test_ticked_age_group_carries_over_only_if_the_new_standard_has_it(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    open_age_menu(page)
+    tick_age(page, "11-12")
+    tick_age(page, "10 & under")
+    page.keyboard.press("Escape")
+    expect(page.locator("#standard-age .multiselect-menu")).to_be_hidden()
+
+    pick_standard(page, "MN Swimming (2025-2026)")
+    expect(page.locator("#standard-age-summary")).to_have_text("11-12")  # MN has no "10 & under"
+    expect(age_headings(page)).to_have_text(["11-12"])
+
+
+def test_age_menu_closes_on_outside_click(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    open_age_menu(page)
+    page.locator("#standards-empty, #standards-table").first.click(position={"x": 5, "y": 5})
+    expect(page.locator("#standard-age .multiselect-menu")).to_be_hidden()
+
+
+def test_collapse_age_groups(page, standards):
+    open_app(page, "standards")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    under10 = page.get_by_role("button", name="10 & under")
+    expect(under10).to_have_attribute("aria-expanded", "true")
+
+    under10.click()
+    expect(under10).to_have_attribute("aria-expanded", "false")
+    expect(under10).to_be_focused()
+    expect(std_rows(page)).to_have_count(4)  # only 11-12's rows
+    expect(page.locator("#standards-body tr.age-heading").first).to_contain_text("2 standards hidden")
+
+    # Remembered for this standard across loads.
+    page.reload(wait_until="networkidle")
+    pick_standard(page, "USA Swimming (2024-2028)")
+    expect(std_rows(page)).to_have_count(4)
+
+    # With a single age group on screen there's nothing to collapse: it always shows its rows.
+    open_age_menu(page)
+    tick_age(page, "10 & under")
+    expect(page.locator("#standards-body .group-toggle")).to_have_count(0)
+    expect(std_rows(page)).to_have_count(2)
+
+    page.get_by_role("button", name="Show all age groups").click()
+    page.get_by_role("button", name="10 & under").click()
+    expect(std_rows(page)).to_have_count(6)
+    expect(page.locator(".group-count")).to_have_count(0)

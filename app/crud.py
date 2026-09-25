@@ -164,6 +164,16 @@ def create_time_standard(db: Session, time_standard: schemas.TimeStandardCreate)
     return db_time_standard
 
 
+def get_time_standard_sets(db: Session):
+    """Each distinct (organization, season) that has standards loaded, e.g. ("USA Swimming", "2024-2028")."""
+    return (
+        db.query(TimeStandard.organization, TimeStandard.season)
+        .distinct()
+        .order_by(TimeStandard.organization, TimeStandard.season)
+        .all()
+    )
+
+
 def get_time_standards(
     db: Session,
     event_id: int | None = None,

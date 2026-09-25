@@ -17,6 +17,7 @@
       <button class="tab" role="tab" data-view="entries">Entries &amp; Results</button>
       <button class="tab" role="tab" data-view="swimmers">Swimmers</button>
       <button class="tab" role="tab" data-view="meets">Meets</button>
+      <button class="tab" role="tab" data-view="standards">Time Standards</button>
     </nav>
   </header>
 
@@ -79,6 +80,46 @@
         </table>
       </div>
       <p class="empty" id="meets-empty" hidden>No meets yet. Add a meet, then enter swimmers in its events.</p>
+    </section>
+
+    <!-- Time standards --------------------------------------------------- -->
+    <section id="view-standards" class="view" hidden>
+      <div class="toolbar">
+        <label>Standard
+          <select id="standard-set" required>
+            <option value="" disabled selected>Select a standard…</option>
+          </select>
+        </label>
+        <label>Distance
+          <select id="standard-distance" disabled><option value="">All</option></select>
+        </label>
+        <label>Stroke
+          <select id="standard-stroke" disabled><option value="">All</option></select>
+        </label>
+        <label>Course
+          <select id="standard-course" disabled><option value="">All</option></select>
+        </label>
+        <label>Gender
+          <select id="standard-gender" disabled><option value="">All</option></select>
+        </label>
+        <div class="field">
+          <span class="field-label" id="standard-age-label">Age groups</span>
+          <details id="standard-age" class="multiselect" aria-disabled="true">
+            <summary aria-labelledby="standard-age-label standard-age-summary"><span id="standard-age-summary">All</span></summary>
+            <div class="multiselect-menu" role="group" aria-labelledby="standard-age-label">
+              <div id="standard-age-options"></div>
+              <button type="button" class="link" id="standard-age-all">Show all age groups</button>
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="table-wrap" id="standards-table" hidden>
+        <table>
+          <thead id="standards-head"></thead>
+          <tbody id="standards-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="standards-empty"></p>
     </section>
   </main>
 
