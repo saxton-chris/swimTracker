@@ -14,7 +14,7 @@ from main import app
 
 pytestmark = pytest.mark.ui
 
-TESTED_MODULES = ["format.js", "api.js", "dom.js", "store.js", "views/import.js"]
+TESTED_MODULES = ["format.js", "api.js", "dom.js", "store.js", "standards-data.js", "views/import.js"]
 
 
 @pytest.fixture(scope="module")
@@ -278,3 +278,69 @@ def summary(parsed=5, imported=0, created=0, existed=0):
 )
 def test_import_summary(js, reply, expected):
     assert call(js, "importSummary", reply) == {"ok": expected}
+
+
+# --- standards: age groups and standing ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "label, expected",
+    [
+        ("11-12", [11, 12]),
+        ("10 & under", [0, 10]),
+        ("8 & Under", [0, 8]),
+        ("10 & Under/9-10", [0, 10]),
+        ("15-16/17 & Over/Senior", [15, 99]),
+        ("Open", None),
+    ],
+)
+def test_age_range(js, label, expected):
+    assert call(js, "ageRange", label) == {"ok": expected}
+
+
+MN_GROUPS = ["8 & Under", "10 & Under/9-10", "11-12", "13-14", "15-16/17 & Over/Senior"]
+USA_GROUPS = ["10 & under", "11-12", "13-14", "15-16", "17-18"]
+
+
+@pytest.mark.parametrize(
+    "groups, age, expected",
+    [
+        (MN_GROUPS, 8, "8 & Under"),  # also inside "10 & Under/9-10": the narrower group wins
+        (MN_GROUPS, 9, "10 & Under/9-10"),
+        (MN_GROUPS, 12, "11-12"),
+        (MN_GROUPS, 19, "15-16/17 & Over/Senior"),
+        (USA_GROUPS, 7, "10 & under"),
+        (USA_GROUPS, 17, "17-18"),
+        (USA_GROUPS, 19, None),  # past the oldest group
+    ],
+)
+def test_age_group_for(js, groups, age, expected):
+    assert call(js, "ageGroupFor", groups, age) == {"ok": expected}
+
+
+TIERS = [{"name": "B", "rank": 1, "seconds": 35.19}, {"name": "BB", "rank": 2, "seconds": 32.59},
+         {"name": "A", "rank": 3, "seconds": 30.09}]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "seconds, achieved, next_name, to_next",
+    [
+        (36.0, None, "B", 0.81),  # not there yet
+        (35.19, "B", "BB", 2.6),  # exactly on the cut counts
+        (32.45, "BB", "A", 2.36),
+        (29.5, "A", None, None),  # top standard
+    ],
+)
+def test_standing_for(js, seconds, achieved, next_name, to_next):
+    got = call(js, "standingFor", seconds, TIERS)["ok"]
+    assert (got["achieved"] and got["achieved"]["name"]) == achieved
+    assert (got["next"] and got["next"]["name"]) == next_name
+    assert got["toNext"] == to_next
+
+
+@pytest.mark.parametrize(
+    "on, expected",
+    [("2026-04-30", 11), ("2026-05-01", 12), ("2027-01-10", 12)],
+)
+def test_age_at_meet_date(js, on, expected):
+    assert call(js, "ageAt", "2014-05-01", on) == {"ok": expected}

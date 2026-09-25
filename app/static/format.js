@@ -48,6 +48,9 @@ export function ageOn(birthIso, onDate = new Date()) {
   return age;
 }
 
+/** Age on an ISO date, e.g. a meet's start date (the date USA Swimming uses for a meet's age groups). */
+export const ageAt = (birthIso, onIso) => ageOn(birthIso, localDate(onIso));
+
 /** plural(1, "entry", "entries") -> "1 entry"; plural(3, ...) -> "3 entries" */
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 

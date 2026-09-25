@@ -347,6 +347,22 @@ td.pending { color: var(--muted); }
   font-variant-numeric: tabular-nums;
   text-decoration: line-through;
 }
+/* Standard column (Entries, when "Compare to standard" is set): tier reached + gap to the next. */
+#entries-table:not(.show-standing) .c-standing { display: none; }
+.std-badge {
+  display: inline-block;
+  min-width: 2.6em;
+  padding: 2px 8px 1px;
+  border: 1.5px solid var(--purple);
+  border-radius: 3px;
+  color: var(--text);
+  font: 700 1rem/1.15 var(--font-display);
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+.std-none { color: var(--muted); }
+.std-next { display: block; margin-top: 3px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
 /* Relay leg and split, under the event name. */
 .relay-detail { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
 
@@ -438,9 +454,10 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "swimmer time"
-      "event   time"
-      "notes   actions";
+      "swimmer  time"
+      "event    time"
+      "standing standing"
+      "notes    actions";
     column-gap: 12px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
@@ -457,6 +474,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   #view-entries td.c-swimmer { grid-area: swimmer; font-weight: 600; }
   #view-entries td.c-event { grid-area: event; color: var(--muted); }
   #view-entries td.c-time { grid-area: time; align-self: center; text-align: right; }
+  #view-entries td.c-standing { grid-area: standing; margin-top: 6px; }
+  #view-entries td.c-standing .std-next { display: inline; margin: 0 0 0 8px; }
   #view-entries td.c-notes { display: block; grid-area: notes; align-self: center; font-size: 0.9rem; width: auto; }
   #view-entries td.actions { grid-area: actions; margin-top: 4px; }
 }

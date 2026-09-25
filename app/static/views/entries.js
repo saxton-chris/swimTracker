@@ -5,19 +5,113 @@ import { api } from "../api.js";
 import { groupToggle, hiddenCount, storedSet } from "../collapse.js";
 import { setupDialog } from "../dialog.js";
 import { actionButton, el, fillSelect } from "../dom.js";
-import { blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
+import { ageAt, blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
+import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
 import { STROKE_ORDER, byId, mutate, newestMeet, state } from "../store.js";
 import { showView } from "../tabs.js";
 import { toast } from "../toast.js";
 
-const ENTRY_COLUMNS = 5;
+const ENTRY_COLUMNS = 6;
 const collapsedMeets = storedSet("swimTracker.collapsedMeets"); // meet ids
+
+// ---------------------------------------------------------------------------
+// "Compare to standard": which set the Standard column uses (remembered in this browser)
+// ---------------------------------------------------------------------------
+
+const STANDARD_PREF_KEY = "swimTracker.entriesStandard";
+let chosenStandard = (() => {
+  try {
+    return localStorage.getItem(STANDARD_PREF_KEY) || "";
+  } catch {
+    return "";
+  }
+})();
+const loadingStandards = new Set();
+
+/** Fill the standard dropdown; returns the chosen set's key, or "" when none (or it no longer exists). */
+function fillStandardSelect() {
+  const select = document.getElementById("entries-standard");
+  select.replaceChildren(
+    el("option", { value: "", textContent: "No standard" }),
+    ...state.standardSets.map((s) => el("option", { value: setKey(s), textContent: setLabel(s) })),
+  );
+  select.value = state.standardSets.some((s) => setKey(s) === chosenStandard) ? chosenStandard : "";
+  return select.value;
+}
+
+/** The chosen set's lookup (see indexSet), fetching it first if needed (renders again once it arrives). */
+function chosenStandardIndex(key) {
+  if (!key) return null;
+  if (loadedSet(key)) return indexSet(key);
+  if (!loadingStandards.has(key)) {
+    loadingStandards.add(key);
+    const set = state.standardSets.find((s) => setKey(s) === key);
+    loadSet(set)
+      .catch((err) => {
+        chosenStandard = ""; // for this page load only; the saved choice is kept for next time
+        toast(`Couldn't load ${setLabel(set)}: ${err.message}`, true);
+      })
+      .finally(() => {
+        loadingStandards.delete(key);
+        renderEntries();
+      });
+  }
+  return null;
+}
+
+document.getElementById("entries-standard").addEventListener("change", (ev) => {
+  chosenStandard = ev.target.value;
+  try {
+    localStorage.setItem(STANDARD_PREF_KEY, chosenStandard);
+  } catch {
+    // storage unavailable: the choice still applies until the page reloads
+  }
+  renderEntries();
+});
+
+/**
+ * The Standard cell: for a timed individual swim, the best tier reached in the chosen set (for the
+ * swimmer's age on the meet's first day, gender, and the event), and how far off the next tier is.
+ * Blank for relays, DQs, and swims without a time.
+ */
+function standingCell(standard, { event, swimmer, meet, time }) {
+  const td = el("td", { class: "c-standing" });
+  if (!standard || event.relay || !time || time.dq || time.time_seconds == null) return td;
+
+  const age = ageAt(swimmer.birthdate, meet.date);
+  const ageGroup = ageGroupFor(standard.ageGroups, age);
+  const tiers = ageGroup ? standard.tiers.get(`${event.id}|${swimmer.gender}|${ageGroup}`) : null;
+  if (!tiers) {
+    td.title = ageGroup ? `No standard for ${event.name}, ${ageGroup}` : `No age group for age ${age}`;
+    td.append(el("span", { class: "std-none", textContent: "—" }));
+    return td;
+  }
+
+  const { achieved, next, toNext } = standingFor(time.time_seconds, tiers);
+  td.title = `Age ${age} at this meet: ${ageGroup}`;
+  td.append(
+    achieved ? el("span", { class: "std-badge", textContent: achieved.name }) : "", // "x to B" says it all
+    el("span", {
+      class: "std-next",
+      textContent: next ? `${formatTime(toNext)} to ${next.name} (${formatTime(next.seconds)})` : "Top standard",
+    }),
+  );
+  return td;
+}
+
+// ---------------------------------------------------------------------------
+// Table
+// ---------------------------------------------------------------------------
 
 export function renderEntries() {
   const meetFilter = document.getElementById("filter-meet");
   const swimmerFilter = document.getElementById("filter-swimmer");
   fillSelect(meetFilter, state.meets, (m) => `${m.name} (${m.date})`, { blank: "All meets" });
   fillSelect(swimmerFilter, state.swimmers, (s) => s.name, { blank: "All swimmers" });
+  const standardKey = fillStandardSelect();
+  const standard = chosenStandardIndex(standardKey);
+  // The Standard column shows once a standard is chosen (its cells fill in when the set has loaded).
+  document.getElementById("entries-table").classList.toggle("show-standing", Boolean(standardKey));
 
   const meets = byId(state.meets);
   const swimmers = byId(state.swimmers);
@@ -57,7 +151,7 @@ export function renderEntries() {
   for (const { meet, rows: meetRows } of groups) {
     const collapsed = collapsedMeets.has(meet.id);
     tableRows.push(meetHeading(meet, meetRows.length, collapsed));
-    if (!collapsed) tableRows.push(...meetRows.map(entryRow));
+    if (!collapsed) tableRows.push(...meetRows.map((r) => entryRow(r, standard)));
   }
   document.getElementById("entries-body").replaceChildren(...tableRows);
 
@@ -101,7 +195,8 @@ function timeCell(time) {
   return el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }));
 }
 
-function entryRow({ entry, meet, swimmer, event, time }) {
+function entryRow(row, standard) {
+  const { entry, meet, swimmer, event, time } = row;
   const detail = relayDetail(time);
   const notes = [time && time.dq && time.dq_reason ? `DQ: ${time.dq_reason}` : null, time && time.notes]
     .filter(Boolean).join(" · ");
@@ -111,6 +206,7 @@ function entryRow({ entry, meet, swimmer, event, time }) {
       event.name,
       detail ? el("span", { class: "relay-detail", textContent: detail }) : null),
     timeCell(time),
+    standingCell(standard, row),
     el("td", { class: "notes c-notes", textContent: notes }),
     el("td", { class: "actions" },
       actionButton(time ? "Edit" : "Add time", () => openEntryDialog(entry)),
