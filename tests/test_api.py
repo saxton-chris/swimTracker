@@ -5,15 +5,21 @@ def test_root_serves_frontend(client):
     r = client.get("/")
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
-    assert "/static/app.js" in r.text
+    assert "/static/main.js" in r.text
 
 
-@pytest.mark.parametrize("path", ["/static/app.js", "/static/styles.css"])
+@pytest.mark.parametrize("path", ["/static/main.js", "/static/views/entries.js", "/static/styles.css"])
 def test_static_assets_served(client, path):
     assert client.get(path).status_code == 200
 
 
-@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/styles.css"])
+@pytest.mark.parametrize("path", ["/static/main.js", "/static/views/entries.js"])
+def test_js_modules_are_served_as_javascript(client, path):
+    # Browsers won't run an ES module served as anything else (e.g. text/plain).
+    assert client.get(path).headers["content-type"].startswith("text/javascript")
+
+
+@pytest.mark.parametrize("path", ["/", "/static/main.js", "/static/views/entries.js", "/static/styles.css"])
 def test_frontend_is_revalidated_on_every_load(client, path):
     assert client.get(path).headers["cache-control"] == "no-cache"
 

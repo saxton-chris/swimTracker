@@ -1,7 +1,9 @@
-"""Unit tests for the pure helpers in app/static/app.js, run in a real browser.
+"""Unit tests for the frontend's helpers (app/static/*.js), run in a real browser.
 
-app.js is a classic (non-module) script, so its top-level functions and the
-`state` object are globals that page.evaluate() can call directly.
+The frontend is ES modules, which don't create globals. The `js` fixture
+imports the modules under test and copies their exports onto `window`, so
+page.evaluate() can call them by name. A module is loaded once per page, so
+`state` here is the same object the app itself uses.
 """
 
 import pytest
@@ -12,6 +14,8 @@ from main import app
 
 pytestmark = pytest.mark.ui
 
+TESTED_MODULES = ["format.js", "api.js", "dom.js", "store.js", "views/import.js"]
+
 
 @pytest.fixture(scope="module")
 def js(browser, live_server, tmp_path_factory):
@@ -21,6 +25,12 @@ def js(browser, live_server, tmp_path_factory):
     context = browser.new_context(base_url=live_server, locale="en-US", timezone_id="America/Chicago")
     page = context.new_page()
     page.goto("/", wait_until="networkidle")
+    page.evaluate(
+        """async (modules) => {
+            for (const m of modules) Object.assign(window, await import(`/static/${m}`));
+        }""",
+        TESTED_MODULES,
+    )
     app.dependency_overrides.clear()  # page is loaded; the helpers below never hit the API
     yield page
     context.close()
@@ -28,7 +38,7 @@ def js(browser, live_server, tmp_path_factory):
 
 
 def call(js, fn, *args):
-    """Call global `fn(*args)` in the page; returns {"ok": value} or {"err": message}."""
+    """Call `fn(*args)` (a module export, see the `js` fixture); returns {"ok": value} or {"err": message}."""
     return js.evaluate(
         f"(args) => {{ try {{ return {{ ok: {fn}(...args) }}; }} catch (e) {{ return {{ err: e.message }}; }} }}",
         list(args),

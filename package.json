@@ -1,0 +1,15 @@
+{
+  "name": "swim-tracker-frontend",
+  "private": true,
+  "description": "Dev tooling for the no-build frontend in app/static (linting only; the app itself needs no Node).",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
+  }
+}
