@@ -145,6 +145,8 @@ def get_or_create_event(db, distance, stroke, course, stats):
 def store_standard(
     db, event, organization, age_group, gender, standard_name, standard_rank, time_seconds, season, stats
 ):
+    # Rows are added uncommitted; each import_* function commits once when its file is done
+    # (thousands of per-row commits are slow on SQLite). Autoflush still lets this lookup see them.
     existing = crud.get_time_standard(db, event.id, organization, age_group, gender, standard_name, season)
     if existing:
         stats.duplicates += 1
@@ -161,6 +163,7 @@ def store_standard(
             time_seconds=time_seconds,
             season=season,
         ),
+        commit=False,
     )
     stats.inserted += 1
 
@@ -241,6 +244,7 @@ def import_usa_standards(db, pdf_path, stats):
                     store_standard(
                         db, event, "USA Swimming", current_age_group, "M", name, USA_RANK[name], t, season, stats
                     )
+    db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +330,7 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
                         stats.malformed.append(f"MN {course.value} {current_age_group} Boys {evt_txt} {name}: {raw!r}")
                     continue
                 store_standard(db, event, "MN Swimming", current_age_group, "M", name, MN_RANK[name], t, season, stats)
+    db.commit()
 
 
 # ---------------------------------------------------------------------------

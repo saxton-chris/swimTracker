@@ -1,29 +1,28 @@
 import io
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Body, HTTPException
 
 import crud
 import import_meet_results
 import schemas
-from database import get_db
+from database import DbSession
 
 router = APIRouter(prefix="/meets", tags=["meets"])
 
 
 @router.post("/", response_model=schemas.MeetOut)
-def add_meet(meet: schemas.MeetCreate, db: Session = Depends(get_db)):
+def add_meet(meet: schemas.MeetCreate, db: DbSession):
     return crud.create_meet(db, meet)
 
 
 @router.get("/", response_model=list[schemas.MeetOut])
-def list_meets(db: Session = Depends(get_db)):
+def list_meets(db: DbSession):
     return crud.get_meets(db)
 
 
 @router.patch("/{meet_id}", response_model=schemas.MeetOut)
-def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(get_db)):
+def update_meet(meet_id: int, update: schemas.MeetUpdate, db: DbSession):
     existing = crud.get_meet_by_id(db, meet_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")
@@ -42,7 +41,7 @@ def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(
 def import_meet_results_pdf(
     meet_id: int,
     data: Annotated[bytes, Body(media_type="application/pdf")],
-    db: Session = Depends(get_db),
+    db: DbSession,
 ):
     """Import a Hy-Tek results PDF (sent as the raw request body) into this meet.
 
@@ -73,6 +72,6 @@ def import_meet_results_pdf(
 
 
 @router.delete("/{meet_id}", status_code=204)
-def delete_meet(meet_id: int, db: Session = Depends(get_db)):
+def delete_meet(meet_id: int, db: DbSession):
     if not crud.delete_meet(db, meet_id):
         raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")

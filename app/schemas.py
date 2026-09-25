@@ -1,13 +1,21 @@
 from datetime import date as date_type
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from models import Course, Stroke
 
 # Must match the gender values stored on TimeStandard rows ("F"/"M"),
 # otherwise swimmers can never be matched against a standard.
 Gender = Literal["F", "M"]
+
+# Text limits match the column sizes in models.py (SQLite itself doesn't enforce them).
+# Names are trimmed and can't be blank.
+SwimmerName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+MeetName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=150)]
+SwimmerNotes = Annotated[str, StringConstraints(max_length=500)]
+Location = Annotated[str, StringConstraints(max_length=200)]
+TimeNotes = Annotated[str, StringConstraints(max_length=300)]
 
 
 def _reject_null(value):
@@ -19,10 +27,10 @@ def _reject_null(value):
 
 
 class SwimmerCreate(BaseModel):
-    name: str
+    name: SwimmerName
     birthdate: date_type
     gender: Gender
-    notes: str | None = None
+    notes: SwimmerNotes | None = None
 
 
 class SwimmerOut(SwimmerCreate):
@@ -32,10 +40,10 @@ class SwimmerOut(SwimmerCreate):
 
 
 class SwimmerUpdate(BaseModel):
-    name: str | None = None
+    name: SwimmerName | None = None
     birthdate: date_type | None = None
     gender: Gender | None = None
-    notes: str | None = None
+    notes: SwimmerNotes | None = None
 
     _not_null = field_validator("name", "birthdate", "gender")(_reject_null)
 
@@ -47,10 +55,10 @@ def check_meet_dates(start: date_type, end: date_type | None):
 
 
 class MeetCreate(BaseModel):
-    name: str
+    name: MeetName
     date: date_type  # first day
     end_date: date_type | None = None  # last day, for multi-day meets
-    location: str | None = None
+    location: Location | None = None
 
     @model_validator(mode="after")
     def _end_after_start(self):
@@ -65,10 +73,10 @@ class MeetOut(MeetCreate):
 
 
 class MeetUpdate(BaseModel):
-    name: str | None = None
+    name: MeetName | None = None
     date: date_type | None = None
     end_date: date_type | None = None
-    location: str | None = None
+    location: Location | None = None
 
     _not_null = field_validator("name", "date")(_reject_null)
 
@@ -120,7 +128,7 @@ class MeetEntryUpdate(BaseModel):
 class SwimTimeCreate(BaseModel):
     meet_entry_id: int
     time_seconds: float = Field(gt=0)
-    notes: str | None = None
+    notes: TimeNotes | None = None
 
 
 class SwimTimeOut(SwimTimeCreate):
@@ -131,7 +139,7 @@ class SwimTimeOut(SwimTimeCreate):
 
 class SwimTimeUpdate(BaseModel):
     time_seconds: float | None = Field(default=None, gt=0)
-    notes: str | None = None
+    notes: TimeNotes | None = None
 
     _not_null = field_validator("time_seconds")(_reject_null)
 
