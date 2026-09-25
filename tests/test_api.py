@@ -72,6 +72,53 @@ def test_meet_patch_rejects_null_date(client, meet):
     assert client.patch(f"/meets/{meet.id}", json={"date": None}).status_code == 422
 
 
+def test_meet_end_date_defaults_to_none(client):
+    r = client.post("/meets/", json={"name": "One day", "date": "2026-01-10"})
+    assert r.json()["end_date"] is None
+
+
+@pytest.mark.parametrize("end", ["2026-01-10", "2026-01-12"])  # same day, or later
+def test_meet_create_with_end_date(client, end):
+    r = client.post("/meets/", json={"name": "Invite", "date": "2026-01-10", "end_date": end})
+    assert r.status_code == 200
+    assert r.json()["end_date"] == end
+
+
+def test_meet_create_rejects_end_before_start(client):
+    r = client.post("/meets/", json={"name": "Invite", "date": "2026-01-10", "end_date": "2026-01-09"})
+    assert r.status_code == 422
+    assert "end_date must be on or after date" in r.text
+
+
+def test_meet_patch_end_date(client, meet):  # meet fixture: 2026-01-10, no end date
+    r = client.patch(f"/meets/{meet.id}", json={"end_date": "2026-01-12"})
+    assert r.status_code == 200 and r.json()["end_date"] == "2026-01-12"
+
+    r = client.patch(f"/meets/{meet.id}", json={"end_date": None})  # back to a one-day meet
+    assert r.status_code == 200 and r.json()["end_date"] is None
+
+
+@pytest.mark.parametrize("payload", [
+    {"end_date": "2026-01-09"},                          # end before the stored start
+    {"date": "2026-01-13"},                              # start moved past the stored end
+    {"date": "2026-01-20", "end_date": "2026-01-15"},    # both sent, still reversed
+])
+def test_meet_patch_rejects_reversed_range(client, meet, payload):
+    client.patch(f"/meets/{meet.id}", json={"end_date": "2026-01-12"})
+    r = client.patch(f"/meets/{meet.id}", json=payload)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "end_date must be on or after date"
+    stored = client.get("/meets/").json()[0]
+    assert (stored["date"], stored["end_date"]) == ("2026-01-10", "2026-01-12")  # unchanged
+
+
+def test_meet_patch_moves_whole_range(client, meet):
+    client.patch(f"/meets/{meet.id}", json={"end_date": "2026-01-12"})
+    r = client.patch(f"/meets/{meet.id}", json={"date": "2026-02-06", "end_date": "2026-02-08"})
+    assert r.status_code == 200
+    assert (r.json()["date"], r.json()["end_date"]) == ("2026-02-06", "2026-02-08")
+
+
 # --- events ----------------------------------------------------------------
 
 def test_event_create_and_list(client):

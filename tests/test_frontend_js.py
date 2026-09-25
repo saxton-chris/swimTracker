@@ -103,6 +103,19 @@ def test_format_date(js, iso, expected):
     assert call(js, "formatDate", iso) == {"ok": expected}
 
 
+@pytest.mark.parametrize("start, end, expected", [
+    ("2026-01-10", None, "Jan 10, 2026"),
+    ("2026-01-10", "2026-01-10", "Jan 10, 2026"),       # same-day end reads as one day
+    ("2026-01-09", "2026-01-11", "Jan 9 – 11, 2026"),
+    ("2026-01-30", "2026-02-01", "Jan 30 – Feb 1, 2026"),
+    ("2025-12-30", "2026-01-01", "Dec 30, 2025 – Jan 1, 2026"),
+])
+def test_format_meet_dates(js, start, end, expected):
+    text = js.evaluate("([date, end_date]) => formatMeetDates({ date, end_date })", [start, end])
+    # Intl.formatRange uses thin/narrow no-break spaces around the dash
+    assert text.replace(" ", " ").replace(" ", " ") == expected
+
+
 @pytest.mark.parametrize("on, expected", [
     # months are 0-based in JS: (2026, 4, 1) is May 1
     ((2026, 3, 30), 11),  # day before 12th birthday

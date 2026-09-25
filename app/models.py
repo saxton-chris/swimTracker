@@ -45,7 +45,11 @@ class Meet(Base):
     name: Mapped[str] = mapped_column(String(150))
     # date_type alias: a bare `date` annotation here would resolve to this
     # column itself (Python 3.14 lazy annotations), not datetime.date.
-    date: Mapped[date_type] = mapped_column(Date)
+    date: Mapped[date_type] = mapped_column(Date)  # first (or only) day of the meet
+    # Last day for multi-day meets; None for one-day meets. Results are attached
+    # to the meet as a whole (Hy-Tek results PDFs don't say which day an event
+    # was swum), and `date` is what age-based standards are keyed on.
+    end_date: Mapped[date_type | None] = mapped_column(Date, default=None)
     location: Mapped[str | None] = mapped_column(String(200), default=None)
 
     # Deleting a meet deletes its meet entries (and, via MeetEntry, their times).

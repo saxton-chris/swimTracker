@@ -106,7 +106,11 @@
     <form method="dialog" id="meet-form">
       <h2></h2>
       <label>Name <input name="name" required maxlength="150" autocomplete="off"></label>
-      <label>Date <input name="date" type="date" required></label>
+      <div class="row two">
+        <label>Start date <input name="date" type="date" required></label>
+        <label>End date <input name="end_date" type="date"></label>
+      </div>
+      <p class="hint">Leave the end date blank for a one-day meet.</p>
       <label>Location <input name="location" maxlength="200" autocomplete="off"></label>
       <p class="form-error" hidden></p>
       <div class="actions">

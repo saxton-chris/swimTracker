@@ -1,7 +1,7 @@
 from datetime import date as date_type
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from models import Course, Stroke
 
@@ -40,10 +40,22 @@ class SwimmerUpdate(BaseModel):
     _not_null = field_validator("name", "birthdate", "gender")(_reject_null)
 
 
+def check_meet_dates(start: date_type, end: date_type | None):
+    """Shared by MeetCreate and the PATCH router (which must merge in stored values first)."""
+    if end is not None and end < start:
+        raise ValueError("end_date must be on or after date")
+
+
 class MeetCreate(BaseModel):
     name: str
-    date: date_type
+    date: date_type  # first day
+    end_date: date_type | None = None  # last day, for multi-day meets
     location: str | None = None
+
+    @model_validator(mode="after")
+    def _end_after_start(self):
+        check_meet_dates(self.date, self.end_date)
+        return self
 
 
 class MeetOut(MeetCreate):
@@ -55,6 +67,7 @@ class MeetOut(MeetCreate):
 class MeetUpdate(BaseModel):
     name: str | None = None
     date: date_type | None = None
+    end_date: date_type | None = None
     location: str | None = None
 
     _not_null = field_validator("name", "date")(_reject_null)

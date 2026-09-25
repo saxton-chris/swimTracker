@@ -248,6 +248,42 @@ def test_add_and_edit_meet(page):
     expect(row(page, "meets", "Spring Champs")).to_contain_text("Edina")
 
 
+def normalize_spaces(text):
+    return text.replace(" ", " ").replace(" ", " ")
+
+
+def test_add_and_edit_multi_day_meet(page):
+    open_app(page, "meets")
+    page.get_by_role("button", name="+ Add meet").click()
+    save(page, "meet-dialog", "meet-form", name="State Champs", date="2026-03-06", end_date="2026-03-08")
+    [meet] = api(page, "/meets/")
+    assert (meet["date"], meet["end_date"]) == ("2026-03-06", "2026-03-08")
+    assert normalize_spaces(row(page, "meets", "State Champs").locator("td").first.inner_text()) == "Mar 6 – 8, 2026"
+
+    click_row_button(page, "meets", "State Champs", "Edit")
+    expect(page.locator("#meet-form [name=end_date]")).to_have_value("2026-03-08")
+    save(page, "meet-dialog", "meet-form", end_date="")  # now a one-day meet
+    assert api(page, "/meets/")[0]["end_date"] is None
+    expect(row(page, "meets", "State Champs").locator("td").first).to_have_text("Mar 6, 2026")
+
+
+def test_meet_end_before_start_shows_error_and_saves_nothing(page):
+    open_app(page, "meets")
+    page.get_by_role("button", name="+ Add meet").click()
+    fill(page, "meet-form", name="Backwards", date="2026-03-08", end_date="2026-03-06")
+    page.locator("#meet-form button[type=submit]").click()
+    expect(page.locator("#meet-form .form-error")).to_have_text("End date must be on or after the start date.")
+    expect(page.locator("#meet-dialog")).to_be_visible()
+    assert api(page, "/meets/") == []
+
+
+def test_entries_show_multi_day_meet_range(page, db, meet_entry, meet):
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    open_app(page)
+    cell = row(page, "entries", "Adella Barber").locator("td.c-date")
+    assert normalize_spaces(cell.inner_text()) == "Jan 10 – 11, 2026"
+
+
 def test_meets_sorted_newest_first(page, db):
     for name, d in [("Old", date(2025, 1, 1)), ("New", date(2026, 6, 1)), ("Mid", date(2025, 9, 1))]:
         crud.create_meet(db, schemas.MeetCreate(name=name, date=d))
