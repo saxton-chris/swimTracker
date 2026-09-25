@@ -1,0 +1,2 @@
+# Third-party builds are kept byte-for-byte as published (no line-ending conversion).
+app/static/vendor/** -text
