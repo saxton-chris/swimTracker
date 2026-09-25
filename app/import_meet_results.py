@@ -261,6 +261,16 @@ def get_or_create_event(db, distance, stroke, course, stats):
     return event
 
 
+def new_stats():
+    return {
+        "events_created": 0,
+        "meet_entries_created": 0,
+        "times_imported": 0,
+        "times_already_existed": 0,
+        "would_import": 0,
+    }
+
+
 def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dry_run):
     """Imports any result whose swimmer name matches an existing row in your
     swimmers table - that match is the actual gate, not the team abbreviation
@@ -367,13 +377,7 @@ def main():
         team_results = [r for r in results if r["team"] == args.team]
         print(f"\n{len(team_results)} results found for team '{args.team}'.")
 
-    stats = {
-        "events_created": 0,
-        "meet_entries_created": 0,
-        "times_imported": 0,
-        "times_already_existed": 0,
-        "would_import": 0,
-    }
+    stats = new_stats()
     unmatched_names = set()
 
     db = SessionLocal()

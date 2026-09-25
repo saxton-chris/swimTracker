@@ -239,3 +239,32 @@ def test_fill_select_keeps_selection_when_still_present(js):
         return [kept, s.value, [...s.options].map((o) => o.textContent)];
     }""")
     assert result == ["2", "", ["All", "C"]]  # falls back to blank once the item is gone
+
+
+# --- importSummary -----------------------------------------------------------
+
+
+def summary(parsed=5, imported=0, created=0, existed=0):
+    return {
+        "results_parsed": parsed,
+        "times_imported": imported,
+        "meet_entries_created": created,
+        "times_already_existed": existed,
+        "events_created": 0,
+        "skipped": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        (summary(parsed=0), "No individual results found in that PDF."),
+        (summary(), "No results in that PDF matched a swimmer on the Swimmers tab."),
+        (summary(imported=1, created=1), "Imported 1 time (1 new entry)."),
+        (summary(imported=3), "Imported 3 times."),
+        (summary(imported=3, created=2, existed=1), "Imported 3 times (2 new entries). 1 result was already recorded."),
+        (summary(existed=2), "2 results were already recorded."),
+    ],
+)
+def test_import_summary(js, reply, expected):
+    assert call(js, "importSummary", reply) == {"ok": expected}

@@ -582,3 +582,75 @@ def test_delete_entry_without_result(page, seeded, confirms):
     expect(toast(page)).to_have_text("Entry deleted")
     assert confirms.messages == ["Delete Ben Cho's 50 FR SCY entry at Winter Invite?"]
     assert len(api(page, "/swim_times/")) == 1
+
+
+# --- importing a results PDF -------------------------------------------------
+
+PDF_FILE = {"name": "results.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.7 fake"}
+
+
+@pytest.fixture
+def fake_results_pdf(monkeypatch):
+    """Any uploaded PDF parses as test_import_meet_results.results_pages():
+    Adella Barber 50 FR SCY 29.50 and Sam Lee 100 FL LCM 1:05.10."""
+    import import_meet_results as imr
+    from conftest import FakePDF
+    from test_import_meet_results import results_pages
+
+    monkeypatch.setattr(imr.pdfplumber, "open", lambda f: FakePDF(results_pages()))
+
+
+def import_pdf(page, meet_id, file=PDF_FILE):
+    page.get_by_role("button", name="Import results").click()
+    fill(page, "import-form", meet_id=meet_id)
+    page.locator("#import-form [name=pdf]").set_input_files(file)
+    page.locator("#import-form button[type=submit]").click()
+
+
+def test_import_results_adds_times_and_missing_entries(page, db, swimmer, meet, fake_results_pdf):
+    sam = crud.create_swimmer(db, schemas.SwimmerCreate(name="Sam Lee", birthdate=date(2012, 3, 1), gender="M"))
+    fly = crud.create_event(db, schemas.EventCreate(distance=100, stroke="FL", course="LCM"))
+    crud.create_meet_entry(db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=sam.id, event_id=fly.id))
+    open_app(page)
+
+    import_pdf(page, meet.id)
+
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    expect(toast(page)).to_have_text("Imported 2 times (1 new entry).")
+    expect(row(page, "entries", "Adella Barber")).to_contain_text("29.50")
+    expect(row(page, "entries", "Sam Lee")).to_contain_text("1:05.10")
+    assert page.locator("#filter-meet").input_value() == str(meet.id)
+    assert len(api(page, "/meet_entries/")) == 2  # Sam's existing entry was reused
+    assert len(api(page, "/swim_times/")) == 2
+
+
+def test_import_results_twice_reports_already_recorded(page, swimmer, meet, fake_results_pdf):
+    open_app(page)
+    import_pdf(page, meet.id)
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    import_pdf(page, meet.id)
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    expect(toast(page)).to_have_text("1 result was already recorded.")
+    assert len(api(page, "/swim_times/")) == 1
+
+
+def test_import_results_defaults_to_filtered_meet(page, two_meets):
+    open_app(page)
+    page.locator("#filter-meet").select_option(str(two_meets.other_meet_id))
+    page.get_by_role("button", name="Import results").click()
+    assert page.locator("#import-form [name=meet_id]").input_value() == str(two_meets.other_meet_id)
+
+
+def test_import_results_rejects_non_pdf(page, swimmer, meet):
+    open_app(page)
+    import_pdf(page, meet.id, {"name": "notes.pdf", "mimeType": "application/pdf", "buffer": b"hello"})
+    expect(page.locator("#import-form .form-error")).to_have_text("The uploaded file isn't a PDF.")
+    expect(page.locator("#import-dialog")).to_be_visible()
+    assert api(page, "/meet_entries/") == []
+
+
+def test_import_results_needs_a_meet(page):
+    open_app(page)
+    page.get_by_role("button", name="Import results").click()
+    expect(toast(page)).to_have_text("Add the meet on the Meets tab first.")
+    expect(page.locator("#import-dialog")).to_be_hidden()

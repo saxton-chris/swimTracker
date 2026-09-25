@@ -73,6 +73,17 @@ class MeetUpdate(BaseModel):
     _not_null = field_validator("name", "date")(_reject_null)
 
 
+class MeetImportOut(BaseModel):
+    """Summary of importing a results PDF into a meet."""
+
+    results_parsed: int  # individual results found in the PDF, all teams
+    times_imported: int
+    meet_entries_created: int
+    times_already_existed: int
+    events_created: int
+    skipped: dict[str, int]  # relay_or_time_trial / dq_or_no_show / unparsed_row
+
+
 class EventCreate(BaseModel):
     distance: int = Field(gt=0)
     stroke: Stroke

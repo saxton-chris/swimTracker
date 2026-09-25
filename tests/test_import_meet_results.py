@@ -5,7 +5,7 @@ import pytest
 import crud
 import import_meet_results as imr
 import schemas
-from conftest import FakePage, word
+from conftest import FakePage, FakePDF, word
 from models import Course, MeetEntry, Stroke, SwimTime
 
 
@@ -293,14 +293,7 @@ def result(
     }
 
 
-def new_stats():
-    return {
-        "events_created": 0,
-        "meet_entries_created": 0,
-        "times_imported": 0,
-        "times_already_existed": 0,
-        "would_import": 0,
-    }
+new_stats = imr.new_stats
 
 
 def run_import(db, results, meet_id, team=None, dry_run=False):
@@ -410,3 +403,67 @@ def test_main_dry_run(run_main, db, swimmer, meet):
 def test_main_requires_meet_id(run_main):
     with pytest.raises(SystemExit):
         run_main()
+
+
+# --- POST /meets/{id}/import-results ---------------------------------------
+
+
+@pytest.fixture
+def upload(client, monkeypatch):
+    """POSTs a PDF body to the import endpoint; pdfplumber sees results_pages()."""
+    monkeypatch.setattr(imr.pdfplumber, "open", lambda f: FakePDF(results_pages()))
+
+    def post(meet_id, body=b"%PDF-1.7 fake"):
+        return client.post(
+            f"/meets/{meet_id}/import-results", content=body, headers={"Content-Type": "application/pdf"}
+        )
+
+    return post
+
+
+def test_import_endpoint_creates_entry_and_time(upload, db, swimmer, meet):
+    r = upload(meet.id)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["results_parsed"] == 2
+    assert (body["meet_entries_created"], body["times_imported"], body["times_already_existed"]) == (1, 1, 0)
+    assert body["skipped"]["relay_or_time_trial"] == 3
+
+    st = db.query(SwimTime).one()
+    assert st.meet_entry.meet_id == meet.id
+    assert st.meet_entry.swimmer_id == swimmer.id
+
+
+def test_import_endpoint_adds_time_to_existing_entry(upload, db, meet_entry, meet):
+    body = upload(meet.id).json()
+    assert (body["meet_entries_created"], body["times_imported"]) == (0, 1)
+    assert db.query(MeetEntry).count() == 1
+    assert db.query(SwimTime).one().meet_entry_id == meet_entry.id
+
+
+def test_import_endpoint_is_idempotent(upload, db, swimmer, meet):
+    upload(meet.id)
+    body = upload(meet.id).json()
+    assert (body["meet_entries_created"], body["times_imported"], body["times_already_existed"]) == (0, 0, 1)
+    assert db.query(SwimTime).count() == 1
+
+
+def test_import_endpoint_unknown_meet(upload):
+    r = upload(999)
+    assert r.status_code == 404
+
+
+def test_import_endpoint_rejects_non_pdf(upload, meet):
+    r = upload(meet.id, body=b"not a pdf")
+    assert r.status_code == 400
+    assert "isn't a PDF" in r.json()["detail"]
+
+
+def test_import_endpoint_unreadable_pdf(upload, meet, monkeypatch):
+    def broken(f):
+        raise ValueError("bad xref")
+
+    monkeypatch.setattr(imr.pdfplumber, "open", broken)
+    r = upload(meet.id)
+    assert r.status_code == 400
+    assert "bad xref" in r.json()["detail"]

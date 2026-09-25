@@ -33,6 +33,7 @@
           <select id="filter-swimmer"><option value="">All swimmers</option></select>
         </label>
         <span class="spacer"></span>
+        <button id="import-results">Import results</button>
         <button class="primary" id="add-entry">+ Add entry</button>
       </div>
       <div class="table-wrap">
@@ -159,6 +160,20 @@
       <div class="actions">
         <button type="button" class="cancel">Cancel</button>
         <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="import-dialog">
+    <form method="dialog" id="import-form">
+      <h2>Import meet results</h2>
+      <label>Meet <select name="meet_id" required></select></label>
+      <label>Results PDF <input name="pdf" type="file" accept=".pdf,application/pdf" required></label>
+      <p class="hint">A Hy-Tek Meet Manager results PDF. Only swimmers already on the Swimmers tab are imported. Existing entries get their time added; missing entries are created. Relays, time trials, DQs, and results that already have a time are skipped.</p>
+      <p class="form-error" hidden></p>
+      <div class="actions">
+        <button type="button" class="cancel">Cancel</button>
+        <button type="submit" class="primary">Import</button>
       </div>
     </form>
   </dialog>
