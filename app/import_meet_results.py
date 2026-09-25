@@ -141,16 +141,26 @@ def parse_result_row(words):
     }
 
 
-def process_column(rows, skip_counts):
-    """rows: one column's row dicts, in top order. Yields parsed result dicts."""
-    current_event = None
+def process_column(rows, skip_counts, state=None):
+    """rows: one column's row dicts, in top order. Returns parsed result dicts.
+
+    `state` carries the current event between calls: Hy-Tek doesn't repeat an
+    event's header when its results flow from the bottom of the left column
+    into the right column, or onto the next page, so parse_pdf passes the same
+    dict for every column in reading order. Without it those rows would be
+    dropped (and miscounted as relay/time-trial skips)."""
+    if state is None:
+        state = {"event": None}
+    current_event = state["event"]
     results = []
 
     for row in rows:
         words = sorted(row["words"], key=lambda w: w["x0"])
         text = " ".join(w["text"] for w in words)
+        # Page-top continuation headers are parenthesized: "(Boys 9-10 50 LC Meter Freestyle)"
+        header_text = text[1:-1] if text.startswith("(") and text.endswith(")") else text
 
-        m = EVENT_RE.match(text)
+        m = EVENT_RE.match(header_text)
         # EVENT_RE accepts any LC/SC + Meter/Yard pairing, but "LC Yard" isn't a
         # real course - let it fall through to the unrecognized-header warning.
         if m and (m.group("course"), m.group("unit")) in COURSE_MAP:
@@ -164,7 +174,7 @@ def process_column(rows, skip_counts):
                 }
             continue
 
-        if EVENT_HEADER_LIKE_RE.match(text):
+        if EVENT_HEADER_LIKE_RE.match(header_text):
             # A header we can't parse - stop attributing rows to the previous event.
             print(f"  WARNING: unrecognized event header, skipping its rows: {text!r}")
             current_event = None
@@ -191,6 +201,7 @@ def process_column(rows, skip_counts):
         parsed["event"] = current_event
         results.append(parsed)
 
+    state["event"] = current_event
     return results
 
 
@@ -198,13 +209,15 @@ def parse_pdf(path):
     all_results = []
     skip_counts = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
 
+    state = {"event": None}  # shared so an event continues across columns and pages
+
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
             words = page.extract_words()
             left = [w for w in words if w["x0"] < COLUMN_SPLIT_X]
             right = [w for w in words if w["x0"] >= COLUMN_SPLIT_X]
             for col_words in (left, right):
-                all_results.extend(process_column(cluster_rows(col_words), skip_counts))
+                all_results.extend(process_column(cluster_rows(col_words), skip_counts, state))
 
     return all_results, skip_counts
 

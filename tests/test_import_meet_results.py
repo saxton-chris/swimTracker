@@ -140,6 +140,66 @@ def test_process_column_unknown_course_is_skipped_with_warning(capsys):
     assert "unrecognized event header" in capsys.readouterr().out
 
 
+def new_skips():
+    return {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
+
+
+def test_process_column_state_carries_event_into_next_column():
+    """An event's header at the bottom of one column; its results continue at
+    the top of the next column with no repeated header."""
+    skips, state = new_skips(), {"event": None}
+    first = rows_of(
+        text_row("Boys 9-10 50 LC Meter Freestyle", 10),
+        result_row(20, "1", "Gallant, Seb M", "10", "TUNA-MN", "32.64"),
+    )
+    second = rows_of(
+        text_row("HY-TEK's MEET MANAGER 8.0 - Page 16", 5),             # page furniture, ignored
+        result_row(10, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16", "CH"),
+    )
+    assert len(imr.process_column(first, skips, state)) == 1
+    [carried] = imr.process_column(second, skips, state)
+    assert carried["name"] == "Saxton, Alistair B"
+    assert carried["time_seconds"] == pytest.approx(36.16)
+    assert carried["event"] == {"distance": 50, "stroke": Stroke.FR, "course": Course.LCM}
+    assert skips == new_skips()  # nothing miscounted as a relay skip
+
+
+def test_process_column_without_state_starts_fresh():
+    skips = new_skips()
+    rows = rows_of(result_row(10, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16"))
+    assert imr.process_column(rows, skips) == []
+    assert skips["relay_or_time_trial"] == 1
+
+
+def test_process_column_state_carries_skipped_block_too():
+    """A relay continuing into the next column must stay skipped, not be
+    attributed to whatever individual event came before it."""
+    skips, state = new_skips(), {"event": None}
+    imr.process_column(rows_of(
+        text_row("Girls 9-10 50 LC Meter Backstroke", 10),
+        result_row(20, "1", "Lee, Sam", "10", "WEST-MN", "40.00"),
+        text_row("Girls 9-10 200 LC Meter Medley Relay", 30),
+    ), skips, state)
+    assert imr.process_column(rows_of(text_row("2 EDI-MN A 3:10.00 34", 10)), skips, state) == []
+    assert state["event"] is None
+
+
+@pytest.mark.parametrize("header, expected_event", [
+    ("(Boys 9-10 100 LC Meter Backstroke)", {"distance": 100, "stroke": Stroke.BK, "course": Course.LCM}),
+    ("(Boys 8 & Under 200 LC Meter Freestyle Relay)", None),
+])
+def test_process_column_parenthesized_continuation_header(header, expected_event):
+    """Page-top '(Event ...)' continuation headers set the event, overriding stale state."""
+    stale = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY}
+    skips, state = new_skips(), {"event": stale}
+    results = imr.process_column(rows_of(
+        text_row(header, 10),
+        result_row(20, "5", "Doe, Jo", "10", "WEST-MN", "1:30.00"),
+    ), skips, state)
+    assert state["event"] == expected_event
+    assert [r["event"] for r in results] == ([expected_event] if expected_event else [])
+
+
 # --- parse_pdf -------------------------------------------------------------
 
 def results_pages():
@@ -159,6 +219,21 @@ def test_parse_pdf_splits_columns(fake_pdfplumber):
     assert results[1]["event"] == {"distance": 100, "stroke": Stroke.FL, "course": Course.LCM}
     assert results[1]["time_seconds"] == pytest.approx(65.1)
     assert skips["relay_or_time_trial"] == 3
+
+
+def test_parse_pdf_event_continues_across_columns_and_pages(fake_pdfplumber):
+    page1_left = text_row("Boys 9-10 50 LC Meter Freestyle", 700)                 # header at column bottom
+    page1_right = result_row(80, "1", "Du, Winston E", "10", "AQJT-MN", "33.04", x_offset=300)
+    page2_left = result_row(80, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16", "CH")
+    page2_left += text_row("Boys 9-10 100 LC Meter Freestyle", 200)
+    page2_left += result_row(220, "1", "Dennis, Brody", "10", "FOXJ-MN", "1:13.53")
+    fake_pdfplumber(imr, {"results.pdf": [FakePage(page1_left + page1_right), FakePage(page2_left)]})
+
+    results, skips = imr.parse_pdf("results.pdf")
+    assert [(r["name"], r["event"]["distance"]) for r in results] == [
+        ("Du, Winston E", 50), ("Saxton, Alistair B", 50), ("Dennis, Brody", 100),
+    ]
+    assert skips["relay_or_time_trial"] == 0
 
 
 # --- import_results --------------------------------------------------------
