@@ -206,6 +206,39 @@ tbody tr.meet-heading:hover { background: none; }
 }
 .meet-heading .meet-location { margin-left: 6px; }
 .meet-heading .meet-location::before { content: "· "; }
+.meet-heading .meet-count {
+  margin-left: 14px;
+  font: 500 0.85rem/1.2 var(--font-body);
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The meet name is a disclosure button: the chevron points down when open, right when collapsed. */
+button.meet-toggle {
+  display: inline-flex;
+  align-items: baseline; /* so the name lines up with the dates beside it */
+  gap: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+}
+button.meet-toggle:hover { background: none; }
+button.meet-toggle:hover .meet-name { text-decoration: underline; text-underline-offset: 3px; }
+button.meet-toggle::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 0.45em;
+  height: 0.45em;
+  margin: 0 2px 0.2em;
+  border-right: 2.5px solid var(--orange);
+  border-bottom: 2.5px solid var(--orange);
+  transform: rotate(45deg);
+}
+button.meet-toggle[aria-expanded="false"]::before { transform: rotate(-45deg); margin-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 td.actions { text-align: right; }
 td.pending { color: var(--muted); }
@@ -311,12 +344,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
   #view-entries tbody tr.meet-heading th { display: block; }
   #view-entries tbody tr.meet-heading th { padding: 14px 14px 8px; border-bottom: 1px solid var(--border); }
   .meet-heading .meet-dates,
-  .meet-heading .meet-location { display: block; margin: 2px 0 0; }
+  .meet-heading .meet-location,
+  .meet-heading .meet-count { display: block; margin: 2px 0 0 calc(0.45em + 14px); }
   .meet-heading .meet-location::before { content: none; }
   #view-entries td { padding: 0; border: none; white-space: normal; }
   #view-entries td.c-swimmer { grid-area: swimmer; font-weight: 600; }
   #view-entries td.c-event { grid-area: event; color: var(--muted); }
-  #view-entries td.c-time { grid-area: time; align-self: center; }
+  #view-entries td.c-time { grid-area: time; align-self: center; text-align: right; }
   #view-entries td.c-notes { display: block; grid-area: notes; align-self: center; font-size: 0.9rem; width: auto; }
   #view-entries td.actions { grid-area: actions; margin-top: 4px; }
 }
