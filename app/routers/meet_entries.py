@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+import crud
+import schemas
 from database import get_db
-import crud, schemas
 
 router = APIRouter(prefix="/meet_entries", tags=["meet_entries"])
+
 
 @router.post("/", response_model=schemas.MeetEntryOut)
 def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: Session = Depends(get_db)):
@@ -23,6 +26,7 @@ def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: Session = Depends(ge
 
     return crud.create_meet_entry(db, meet_entry)
 
+
 @router.get("/", response_model=list[schemas.MeetEntryOut])
 def list_meet_entries(
     meet_id: int | None = None,
@@ -30,6 +34,7 @@ def list_meet_entries(
     db: Session = Depends(get_db),
 ):
     return crud.get_meet_entries(db, meet_id=meet_id, swimmer_id=swimmer_id)
+
 
 @router.patch("/{meet_entry_id}", response_model=schemas.MeetEntryOut)
 def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: Session = Depends(get_db)):
@@ -60,6 +65,7 @@ def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: S
             )
 
     return crud.update_meet_entry(db, meet_entry_id, update)
+
 
 @router.delete("/{meet_entry_id}", status_code=204)
 def delete_meet_entry(meet_entry_id: int, db: Session = Depends(get_db)):

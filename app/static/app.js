@@ -33,6 +33,14 @@ async function api(method, path, body) {
   return data;
 }
 
+/** POST a file as the raw request body (e.g. a results PDF) and return the JSON reply. */
+async function upload(path, file) {
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/pdf" }, body: file });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(errorMessage(data, res));
+  return data;
+}
+
 function errorMessage(data, res) {
   const detail = data && data.detail;
   if (typeof detail === "string") return detail;
@@ -139,13 +147,13 @@ function fillSelect(select, items, labelFn, { blank } = {}) {
 }
 
 let toastTimer;
-function toast(message, isError = false) {
+function toast(message, isError = false, ms = isError ? 6000 : 2500) {
   const t = document.getElementById("toast");
   t.textContent = message;
   t.className = isError ? "toast error" : "toast";
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), isError ? 6000 : 2500);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +489,51 @@ async function deleteEntry(entry, swimmer, event, meet) {
 }
 
 document.getElementById("add-entry").addEventListener("click", () => openEntryDialog());
+
+// ---------------------------------------------------------------------------
+// Importing a meet results PDF
+// ---------------------------------------------------------------------------
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/** One-line summary of a POST /meets/{id}/import-results reply. */
+function importSummary(r) {
+  if (!r.results_parsed) return "No individual results found in that PDF.";
+  const matched = r.times_imported + r.times_already_existed;
+  if (!matched) return "No results in that PDF matched a swimmer on the Swimmers tab.";
+  const parts = [];
+  if (r.times_imported) {
+    parts.push(`Imported ${plural(r.times_imported, "time", "times")}` +
+      (r.meet_entries_created ? ` (${plural(r.meet_entries_created, "new entry", "new entries")})` : "") + ".");
+  }
+  if (r.times_already_existed) {
+    parts.push(`${plural(r.times_already_existed, "result was", "results were")} already recorded.`);
+  }
+  return parts.join(" ");
+}
+
+const importDialog = setupDialog("import-dialog", async (f) => {
+  if (!f.pdf || !f.pdf.size) throw new Error("Choose a results PDF to import.");
+  const meetId = Number(f.meet_id);
+  const result = await upload(`/meets/${meetId}/import-results`, f.pdf);
+  // Show the meet that was just imported into.
+  document.getElementById("filter-meet").value = String(meetId);
+  document.getElementById("filter-swimmer").value = "";
+  toast(importSummary(result), false, 6000);
+});
+
+function openImportDialog() {
+  if (!state.meets.length) {
+    toast("Add the meet on the Meets tab first.", true);
+    return;
+  }
+  fillSelect(document.getElementById("import-form").elements.meet_id, state.meets, (m) => `${m.name} (${m.date})`);
+  importDialog.open("Import meet results", {
+    meet_id: document.getElementById("filter-meet").value || state.meets[0].id,
+  });
+}
+
+document.getElementById("import-results").addEventListener("click", openImportDialog);
 
 // ---------------------------------------------------------------------------
 // Boot

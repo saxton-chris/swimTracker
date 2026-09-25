@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+import crud
+import schemas
 from database import get_db
-import crud, schemas
 
 router = APIRouter(prefix="/time_standards", tags=["time_standards"])
+
 
 @router.post("/", response_model=schemas.TimeStandardOut)
 def add_time_standard(time_standard: schemas.TimeStandardCreate, db: Session = Depends(get_db)):
@@ -26,6 +29,7 @@ def add_time_standard(time_standard: schemas.TimeStandardCreate, db: Session = D
         )
 
     return crud.create_time_standard(db, time_standard)
+
 
 @router.get("/", response_model=list[schemas.TimeStandardOut])
 def list_time_standards(

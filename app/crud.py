@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
-from models import Swimmer, Meet, Event, MeetEntry, TimeStandard, SwimTime
+
 import schemas
+from models import Event, Meet, MeetEntry, Swimmer, SwimTime, TimeStandard
 
 
 def _apply_update(db: Session, db_obj, update):
@@ -76,11 +77,7 @@ def get_events(db: Session):
 
 
 def get_event(db: Session, distance: int, stroke, course):
-    return (
-        db.query(Event)
-        .filter(Event.distance == distance, Event.stroke == stroke, Event.course == course)
-        .first()
-    )
+    return db.query(Event).filter(Event.distance == distance, Event.stroke == stroke, Event.course == course).first()
 
 
 def get_swimmer_by_id(db: Session, swimmer_id: int):
@@ -137,8 +134,13 @@ def delete_meet_entry(db: Session, meet_entry_id: int):
 
 
 def get_time_standard(
-    db: Session, event_id: int, organization: str, age_group: str, gender: str,
-    standard_name: str, season: str,
+    db: Session,
+    event_id: int,
+    organization: str,
+    age_group: str,
+    gender: str,
+    standard_name: str,
+    season: str,
 ):
     return (
         db.query(TimeStandard)

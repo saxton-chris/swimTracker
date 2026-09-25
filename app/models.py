@@ -1,7 +1,8 @@
 import enum
 from datetime import date as date_type
 
-from sqlalchemy import Date, Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -33,9 +34,7 @@ class Swimmer(Base):
     notes: Mapped[str | None] = mapped_column(String(500), default=None)
 
     # Deleting a swimmer deletes their meet entries (and, via MeetEntry, their times).
-    meet_entries: Mapped[list["MeetEntry"]] = relationship(
-        back_populates="swimmer", cascade="all, delete"
-    )
+    meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="swimmer", cascade="all, delete")
 
 
 class Meet(Base):
@@ -53,9 +52,7 @@ class Meet(Base):
     location: Mapped[str | None] = mapped_column(String(200), default=None)
 
     # Deleting a meet deletes its meet entries (and, via MeetEntry, their times).
-    meet_entries: Mapped[list["MeetEntry"]] = relationship(
-        back_populates="meet", cascade="all, delete"
-    )
+    meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="meet", cascade="all, delete")
 
 
 class Event(Base):
@@ -69,9 +66,7 @@ class Event(Base):
     meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="event")
     time_standards: Mapped[list["TimeStandard"]] = relationship(back_populates="event")
 
-    __table_args__ = (
-        UniqueConstraint("distance", "stroke", "course", name="uix_event"),
-    )
+    __table_args__ = (UniqueConstraint("distance", "stroke", "course", name="uix_event"),)
 
     @property
     def name(self) -> str:
@@ -101,9 +96,7 @@ class MeetEntry(Base):
         back_populates="meet_entry", uselist=False, cascade="all, delete"
     )
 
-    __table_args__ = (
-        UniqueConstraint("meet_id", "swimmer_id", "event_id", name="uix_meet_entry"),
-    )
+    __table_args__ = (UniqueConstraint("meet_id", "swimmer_id", "event_id", name="uix_meet_entry"),)
 
 
 class SwimTime(Base):
@@ -141,7 +134,9 @@ class TimeStandard(Base):
     age_group: Mapped[str] = mapped_column(String(50))  # e.g. "11-12", "15-16/17 & Over/Senior"
     gender: Mapped[str] = mapped_column(String(10))
     standard_name: Mapped[str] = mapped_column(String(20))  # e.g. "B", "BB", "A" or "BRNZ", "SLVR", "GOLD"
-    standard_rank: Mapped[int] = mapped_column()  # numeric order within this org's own scale, used to find "next standard up"
+    standard_rank: Mapped[int] = (
+        mapped_column()
+    )  # numeric order within this org's own scale, used to find "next standard up"
     time_seconds: Mapped[float] = mapped_column(Float)
     season: Mapped[str] = mapped_column(String(20))  # e.g. "2025-2026" or "2024-2028"
 
@@ -149,7 +144,12 @@ class TimeStandard(Base):
 
     __table_args__ = (
         UniqueConstraint(
-            "event_id", "organization", "age_group", "gender", "standard_name", "season",
+            "event_id",
+            "organization",
+            "age_group",
+            "gender",
+            "standard_name",
+            "season",
             name="uix_time_standard",
         ),
     )

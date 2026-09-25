@@ -3,6 +3,7 @@
 app.js is a classic (non-module) script, so its top-level functions and the
 `state` object are globals that page.evaluate() can call directly.
 """
+
 import pytest
 from sqlalchemy.orm import sessionmaker
 
@@ -36,31 +37,39 @@ def call(js, fn, *args):
 
 # --- formatTime --------------------------------------------------------------
 
-@pytest.mark.parametrize("seconds, expected", [
-    (32.4, "32.40"),
-    (0.5, "0.50"),
-    (59.99, "59.99"),
-    (60, "1:00.00"),
-    (62.45, "1:02.45"),
-    (59.999, "1:00.00"),  # rounding to hundredths carries into the minute
-    (605.1, "10:05.10"),
-    (1000.07, "16:40.07"),
-])
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [
+        (32.4, "32.40"),
+        (0.5, "0.50"),
+        (59.99, "59.99"),
+        (60, "1:00.00"),
+        (62.45, "1:02.45"),
+        (59.999, "1:00.00"),  # rounding to hundredths carries into the minute
+        (605.1, "10:05.10"),
+        (1000.07, "16:40.07"),
+    ],
+)
 def test_format_time(js, seconds, expected):
     assert call(js, "formatTime", seconds) == {"ok": expected}
 
 
 # --- parseTime ---------------------------------------------------------------
 
-@pytest.mark.parametrize("text, expected", [
-    ("32.45", 32.45),
-    (" 1:02.45 ", 62.45),
-    ("2:45.3", 165.3),
-    ("58", 58),
-    ("0:59.99", 59.99),
-    ("1:02.456", 62.46),  # rounded to hundredths
-    ("16:40.07", 1000.07),
-])
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("32.45", 32.45),
+        (" 1:02.45 ", 62.45),
+        ("2:45.3", 165.3),
+        ("58", 58),
+        ("0:59.99", 59.99),
+        ("1:02.456", 62.46),  # rounded to hundredths
+        ("16:40.07", 1000.07),
+    ],
+)
 def test_parse_time_valid(js, text, expected):
     assert call(js, "parseTime", text) == {"ok": expected}
 
@@ -70,17 +79,20 @@ def test_parse_time_blank_is_null(js, text):
     assert call(js, "parseTime", text) == {"ok": None}
 
 
-@pytest.mark.parametrize("text, message", [
-    ("abc", "isn't a valid time"),
-    ("-5", "isn't a valid time"),
-    ("1.2.3", "isn't a valid time"),
-    ("1:2:3", "isn't a valid time"),
-    ("1:", "isn't a valid time"),
-    ("1:75.00", "seconds must be under 60"),
-    ("1:60", "seconds must be under 60"),
-    ("0", "greater than zero"),
-    ("0:00.00", "greater than zero"),
-])
+@pytest.mark.parametrize(
+    "text, message",
+    [
+        ("abc", "isn't a valid time"),
+        ("-5", "isn't a valid time"),
+        ("1.2.3", "isn't a valid time"),
+        ("1:2:3", "isn't a valid time"),
+        ("1:", "isn't a valid time"),
+        ("1:75.00", "seconds must be under 60"),
+        ("1:60", "seconds must be under 60"),
+        ("0", "greater than zero"),
+        ("0:00.00", "greater than zero"),
+    ],
+)
 def test_parse_time_invalid(js, text, message):
     result = call(js, "parseTime", text)
     assert message in result["err"]
@@ -94,42 +106,53 @@ def test_parse_format_round_trip(js, seconds):
 
 # --- formatDate / ageOn ------------------------------------------------------
 
-@pytest.mark.parametrize("iso, expected", [
-    ("2026-01-10", "Jan 10, 2026"),  # not Jan 9: parsed as a local date, not UTC midnight
-    ("2026-12-31", "Dec 31, 2026"),
-    ("2024-02-29", "Feb 29, 2024"),
-])
+
+@pytest.mark.parametrize(
+    "iso, expected",
+    [
+        ("2026-01-10", "Jan 10, 2026"),  # not Jan 9: parsed as a local date, not UTC midnight
+        ("2026-12-31", "Dec 31, 2026"),
+        ("2024-02-29", "Feb 29, 2024"),
+    ],
+)
 def test_format_date(js, iso, expected):
     assert call(js, "formatDate", iso) == {"ok": expected}
 
 
-@pytest.mark.parametrize("start, end, expected", [
-    ("2026-01-10", None, "Jan 10, 2026"),
-    ("2026-01-10", "2026-01-10", "Jan 10, 2026"),       # same-day end reads as one day
-    ("2026-01-09", "2026-01-11", "Jan 9 – 11, 2026"),
-    ("2026-01-30", "2026-02-01", "Jan 30 – Feb 1, 2026"),
-    ("2025-12-30", "2026-01-01", "Dec 30, 2025 – Jan 1, 2026"),
-])
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [
+        ("2026-01-10", None, "Jan 10, 2026"),
+        ("2026-01-10", "2026-01-10", "Jan 10, 2026"),  # same-day end reads as one day
+        ("2026-01-09", "2026-01-11", "Jan 9 – 11, 2026"),
+        ("2026-01-30", "2026-02-01", "Jan 30 – Feb 1, 2026"),
+        ("2025-12-30", "2026-01-01", "Dec 30, 2025 – Jan 1, 2026"),
+    ],
+)
 def test_format_meet_dates(js, start, end, expected):
     text = js.evaluate("([date, end_date]) => formatMeetDates({ date, end_date })", [start, end])
     # Intl.formatRange uses thin/narrow no-break spaces around the dash
     assert text.replace(" ", " ").replace(" ", " ") == expected
 
 
-@pytest.mark.parametrize("on, expected", [
-    # months are 0-based in JS: (2026, 4, 1) is May 1
-    ((2026, 3, 30), 11),  # day before 12th birthday
-    ((2026, 4, 1), 12),   # birthday
-    ((2026, 4, 2), 12),
-    ((2026, 0, 1), 11),
-    ((2026, 11, 31), 12),
-])
+@pytest.mark.parametrize(
+    "on, expected",
+    [
+        # months are 0-based in JS: (2026, 4, 1) is May 1
+        ((2026, 3, 30), 11),  # day before 12th birthday
+        ((2026, 4, 1), 12),  # birthday
+        ((2026, 4, 2), 12),
+        ((2026, 0, 1), 11),
+        ((2026, 11, 31), 12),
+    ],
+)
 def test_age_on(js, on, expected):
     age = js.evaluate("([y, m, d]) => ageOn('2014-05-01', new Date(y, m, d))", list(on))
     assert age == expected
 
 
 # --- errorMessage ------------------------------------------------------------
+
 
 def _error_message(js, data, status=400, status_text="Bad Request"):
     return js.evaluate(
@@ -143,10 +166,12 @@ def test_error_message_string_detail(js):
 
 
 def test_error_message_validation_list(js):
-    data = {"detail": [
-        {"loc": ["body", "name"], "msg": "Field required"},
-        {"loc": ["body", "time_seconds"], "msg": "Input should be greater than 0"},
-    ]}
+    data = {
+        "detail": [
+            {"loc": ["body", "name"], "msg": "Field required"},
+            {"loc": ["body", "time_seconds"], "msg": "Input should be greater than 0"},
+        ]
+    }
     assert _error_message(js, data) == "name: Field required; time_seconds: Input should be greater than 0"
 
 
@@ -157,13 +182,21 @@ def test_error_message_falls_back_to_status(js, data):
 
 # --- cascadeWarning ----------------------------------------------------------
 
-@pytest.mark.parametrize("entry_ids, timed_ids, expected", [
-    ([], [], ""),
-    ([1], [], "\n\nThis will also delete 1 meet entry."),
-    ([1], [1], "\n\nThis will also delete 1 meet entry and 1 result."),
-    ([1, 2], [2], "\n\nThis will also delete 2 meet entries and 1 result."),
-    ([1, 2, 3], [1, 2, 3, 99], "\n\nThis will also delete 3 meet entries and 3 results."),  # 99: another entry's time
-])
+
+@pytest.mark.parametrize(
+    "entry_ids, timed_ids, expected",
+    [
+        ([], [], ""),
+        ([1], [], "\n\nThis will also delete 1 meet entry."),
+        ([1], [1], "\n\nThis will also delete 1 meet entry and 1 result."),
+        ([1, 2], [2], "\n\nThis will also delete 2 meet entries and 1 result."),
+        (
+            [1, 2, 3],
+            [1, 2, 3, 99],
+            "\n\nThis will also delete 3 meet entries and 3 results.",
+        ),  # 99: another entry's time
+    ],
+)
 def test_cascade_warning(js, entry_ids, timed_ids, expected):
     result = js.evaluate(
         """([entryIds, timedIds]) => {
@@ -178,6 +211,7 @@ def test_cascade_warning(js, entry_ids, timed_ids, expected):
 
 
 # --- DOM helpers -------------------------------------------------------------
+
 
 def test_el_sets_text_not_html(js):
     html = js.evaluate("() => el('td', { textContent: '<b>x</b>' }).innerHTML")
@@ -205,3 +239,32 @@ def test_fill_select_keeps_selection_when_still_present(js):
         return [kept, s.value, [...s.options].map((o) => o.textContent)];
     }""")
     assert result == ["2", "", ["All", "C"]]  # falls back to blank once the item is gone
+
+
+# --- importSummary -----------------------------------------------------------
+
+
+def summary(parsed=5, imported=0, created=0, existed=0):
+    return {
+        "results_parsed": parsed,
+        "times_imported": imported,
+        "meet_entries_created": created,
+        "times_already_existed": existed,
+        "events_created": 0,
+        "skipped": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        (summary(parsed=0), "No individual results found in that PDF."),
+        (summary(), "No results in that PDF matched a swimmer on the Swimmers tab."),
+        (summary(imported=1, created=1), "Imported 1 time (1 new entry)."),
+        (summary(imported=3), "Imported 3 times."),
+        (summary(imported=3, created=2, existed=1), "Imported 3 times (2 new entries). 1 result was already recorded."),
+        (summary(existed=2), "2 results were already recorded."),
+    ],
+)
+def test_import_summary(js, reply, expected):
+    assert call(js, "importSummary", reply) == {"ok": expected}

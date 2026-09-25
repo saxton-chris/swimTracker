@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. There is no linter configured yet.
+A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. Ruff handles linting and formatting (`ruff.toml` at the repo root).
 
 ## Commands
 
@@ -28,6 +28,8 @@ pip install -r requirements-dev.txt
 pytest                                             # full suite + coverage report
 pytest tests/test_api.py::test_event_duplicate     # single test
 pytest -m "not ui"                                 # skip the browser tests
+ruff check .                                       # lint (add --fix for safe auto-fixes)
+ruff format .                                      # format
 ```
 
 Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. Frontend tests (marked `ui`) use Playwright against a live uvicorn thread (`live_server` fixture). They launch the installed Chrome or Edge, falling back to Playwright's Chromium, and skip if no browser is found. They use a temporary SQLite *file* instead of `StaticPool`, because the page sends parallel requests that the server answers on separate threads, and those threads can't safely share a single connection. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
@@ -53,6 +55,7 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 
 - Meet entries and their result are edited in one dialog. The event is chosen by distance/stroke/course and created through `POST /events/` if it doesn't exist. The time is entered as `ss.xx` or `m:ss.xx` and sent as float seconds. Clearing the time deletes the `SwimTime`.
 - Deletes use `confirm()` and say how many entries and results the cascade will remove.
+- "Import results" on the Entries tab uploads a Hy-Tek results PDF for a chosen meet to `POST /meets/{id}/import-results`. The PDF is the raw request body (`Content-Type: application/pdf`, no multipart, so no `python-multipart` dependency). The endpoint runs the same `parse_pdf` + `import_results` as the CLI script, with no team filter, and returns a count summary that the page shows as a toast.
 - All user data is rendered with `textContent`, never `innerHTML`.
 - Styling uses West Express colors: orange `#F2661B` and black as primary, purple `#5A2D82` as secondary, set as CSS custom properties at the top of `styles.css`, with a dark-mode override. Fonts are Barlow Condensed and Barlow from Google Fonts, falling back to system fonts when offline. Times are shown in a scoreboard-style `.clock` element. Below 640px the entries table stacks each row, and the swimmer/meet tables hide the `.c-birthdate`, `.c-notes`, and `.c-location` columns.
 - Tests: `tests/test_frontend_js.py` calls `app.js`'s helpers (`parseTime`, `formatTime`, etc.) directly in a browser page, `tests/test_frontend_ui.py` drives the UI end to end, and `tests/test_frontend_static.py` checks that every element id `app.js` looks up exists in `index.html`.
@@ -62,6 +65,6 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 Both scripts use `pdfplumber` and parse PDFs by clustering words into rows by y-position and bucketing into columns by x-position, rather than line-by-line text. They write through `crud`/`schemas` (not raw SQL), are idempotent (check for existing rows before inserting), and print a summary of skipped rows instead of guessing.
 
 - `import_time_standards.py`: handles the USA Swimming Motivational Standards layout (course per row; tiers B–AAAA) and MN Swimming per-course files (tiers BRNZ/SLVR/GOLD/CH/ZONE). Source filenames are in the `FILES` dict at the bottom.
-- `import_meet_results.py`: parses Hy-Tek Meet Manager two-column "Results" PDFs. The `Meet` must already exist (`--meet-id`). Swimmers are matched by "First Last" against existing rows only — never auto-created.
+- `import_meet_results.py`: parses Hy-Tek Meet Manager two-column "Results" PDFs. Also used by the web import endpoint (see Frontend). The `Meet` must already exist (`--meet-id`). Swimmers are matched by "First Last" against existing rows only — never auto-created.
 - The MN SCY PDF has three typos (11-12 Boys 50 Free SLVR `35:39`, BRNZ `41:09`, 50 Breast ZONE `33:29`) that the importer skips as malformed. After a fresh import, add them by hand as 35.39, 41.09, and 33.29 seconds, season 2025-2026.
 - Both intentionally skip relays (model supports individual events only); the results importer also skips Time Trials, DQs, NS, and splits.

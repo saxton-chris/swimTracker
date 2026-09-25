@@ -4,6 +4,7 @@ Each test gets a fresh in-memory DB served by a live uvicorn instance (see the
 `page` fixture in conftest). Data is seeded through crud before the page loads
 and verified afterwards through the HTTP API, never the test's own session.
 """
+
 from datetime import date
 from types import SimpleNamespace
 
@@ -28,6 +29,7 @@ def engine(tmp_path):
 
 
 # --- helpers -----------------------------------------------------------------
+
 
 def open_app(page, view="entries"):
     page.goto(f"/#{view}", wait_until="networkidle")
@@ -74,12 +76,17 @@ def seeded(db, swimmer, meet, swim_event, meet_entry):
     )
     crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=meet_entry.id, time_seconds=32.45, notes="PB"))
     return SimpleNamespace(
-        adella_id=swimmer.id, ben_id=ben.id, meet_id=meet.id, event_id=swim_event.id,
-        adella_entry_id=meet_entry.id, ben_entry_id=ben_entry.id,
+        adella_id=swimmer.id,
+        ben_id=ben.id,
+        meet_id=meet.id,
+        event_id=swim_event.id,
+        adella_entry_id=meet_entry.id,
+        ben_entry_id=ben_entry.id,
     )
 
 
 # --- rendering & navigation --------------------------------------------------
+
 
 def test_renders_seeded_entries(page, seeded):
     open_app(page)
@@ -103,9 +110,15 @@ def test_swimmers_and_meets_tables(page, seeded):
 
 
 def test_user_text_is_rendered_as_text_not_html(page, db):
-    crud.create_swimmer(db, schemas.SwimmerCreate(
-        name="<img src=x onerror=window.pwned=1>", birthdate=date(2014, 1, 1), gender="F", notes="<b>bold</b>",
-    ))
+    crud.create_swimmer(
+        db,
+        schemas.SwimmerCreate(
+            name="<img src=x onerror=window.pwned=1>",
+            birthdate=date(2014, 1, 1),
+            gender="F",
+            notes="<b>bold</b>",
+        ),
+    )
     open_app(page, "swimmers")
     expect(page.locator("#swimmers-body")).to_contain_text("<img src=x onerror=window.pwned=1>")
     expect(page.locator("#swimmers-body")).to_contain_text("<b>bold</b>")
@@ -151,7 +164,9 @@ def test_table_cells_fill_their_rows(page, db, seeded, view):
     lines break (regression: the dialog's `.actions` rule once turned the
     table's td.actions into a flex box that didn't stretch to the row)."""
     crud.update_swim_time(db, 1, schemas.SwimTimeUpdate(notes="Imported from meet results PDF, place 25"))
-    crud.update_swimmer(db, seeded.adella_id, schemas.SwimmerUpdate(notes="Long enough to wrap onto a second line in the notes column"))
+    crud.update_swimmer(
+        db, seeded.adella_id, schemas.SwimmerUpdate(notes="Long enough to wrap onto a second line in the notes column")
+    )
     page.set_viewport_size({"width": 1100, "height": 800})
     open_app(page, view)
     bottoms = page.evaluate(f"""() => [...document.querySelectorAll('#{view}-body tr')].map(tr =>
@@ -168,6 +183,7 @@ def test_no_horizontal_page_scroll_on_phone(page, seeded, view):
 
 
 # --- swimmers ----------------------------------------------------------------
+
 
 def test_add_swimmer(page):
     open_app(page, "swimmers")
@@ -199,9 +215,9 @@ def test_cancel_saves_nothing(page):
 
 
 def test_edit_swimmer(page, db):
-    crud.create_swimmer(db, schemas.SwimmerCreate(
-        name="Ann Lee", birthdate=date(2013, 2, 3), gender="F", notes="likes fly"
-    ))
+    crud.create_swimmer(
+        db, schemas.SwimmerCreate(name="Ann Lee", birthdate=date(2013, 2, 3), gender="F", notes="likes fly")
+    )
     open_app(page, "swimmers")
     click_row_button(page, "swimmers", "Ann Lee", "Edit")
     expect(page.locator("#swimmer-dialog h2")).to_have_text("Edit swimmer")
@@ -246,6 +262,7 @@ def test_delete_of_already_deleted_row_shows_error_and_refreshes(page, seeded):
 
 
 # --- meets -------------------------------------------------------------------
+
 
 def test_add_and_edit_meet(page):
     open_app(page, "meets")
@@ -325,13 +342,19 @@ def test_delete_meet_without_entries_has_no_cascade_warning(page, meet, confirms
 
 # --- entries: filtering ------------------------------------------------------
 
+
 @pytest.fixture
 def two_meets(db, seeded):
     """Adds a second meet where only Ben swims."""
     other = crud.create_meet(db, schemas.MeetCreate(name="Spring Champs", date=date(2026, 3, 1)))
-    crud.create_meet_entry(db, schemas.MeetEntryCreate(
-        meet_id=other.id, swimmer_id=seeded.ben_id, event_id=seeded.event_id,
-    ))
+    crud.create_meet_entry(
+        db,
+        schemas.MeetEntryCreate(
+            meet_id=other.id,
+            swimmer_id=seeded.ben_id,
+            event_id=seeded.event_id,
+        ),
+    )
     seeded.other_meet_id = other.id
     return seeded
 
@@ -373,6 +396,7 @@ def test_clicking_meet_or_swimmer_name_filters_entries(page, two_meets):
 
 # --- entries: add ------------------------------------------------------------
 
+
 def test_add_entry_needs_a_swimmer_and_a_meet(page, meet):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
@@ -383,9 +407,18 @@ def test_add_entry_needs_a_swimmer_and_a_meet(page, meet):
 def test_add_entry_creates_event_and_result(page, swimmer, meet):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    save(page, "entry-dialog", "entry-form",
-         meet_id=meet.id, swimmer_id=swimmer.id, distance=200, stroke="BK", course="LCM",
-         time="2:45.3", time_notes="first 200")
+    save(
+        page,
+        "entry-dialog",
+        "entry-form",
+        meet_id=meet.id,
+        swimmer_id=swimmer.id,
+        distance=200,
+        stroke="BK",
+        course="LCM",
+        time="2:45.3",
+        time_notes="first 200",
+    )
 
     [event] = api(page, "/events/")
     assert event["name"] == "200 BK LCM"
@@ -423,11 +456,14 @@ def test_new_entry_defaults_to_current_filters_and_last_course(page, two_meets):
     expect(page.locator("#entry-form [name=time]")).to_have_value("")  # reset from last time
 
 
-@pytest.mark.parametrize("fields, error", [
-    ({"time": "1:75.00"}, "seconds must be under 60"),
-    ({"time": "fast"}, "isn't a valid time"),
-    ({"time": "", "time_notes": "PB"}, "Enter a time to save result notes."),
-])
+@pytest.mark.parametrize(
+    "fields, error",
+    [
+        ({"time": "1:75.00"}, "seconds must be under 60"),
+        ({"time": "fast"}, "isn't a valid time"),
+        ({"time": "", "time_notes": "PB"}, "Enter a time to save result notes."),
+    ],
+)
 def test_invalid_entry_shows_error_and_writes_nothing(page, swimmer, meet, fields, error):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
@@ -479,6 +515,7 @@ def test_retry_after_failed_result_save_does_not_duplicate_entry(page, swimmer, 
 
 
 # --- entries: edit & delete --------------------------------------------------
+
 
 def test_edit_entry_prefills_and_updates_result(page, seeded):
     open_app(page)
@@ -545,3 +582,75 @@ def test_delete_entry_without_result(page, seeded, confirms):
     expect(toast(page)).to_have_text("Entry deleted")
     assert confirms.messages == ["Delete Ben Cho's 50 FR SCY entry at Winter Invite?"]
     assert len(api(page, "/swim_times/")) == 1
+
+
+# --- importing a results PDF -------------------------------------------------
+
+PDF_FILE = {"name": "results.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.7 fake"}
+
+
+@pytest.fixture
+def fake_results_pdf(monkeypatch):
+    """Any uploaded PDF parses as test_import_meet_results.results_pages():
+    Adella Barber 50 FR SCY 29.50 and Sam Lee 100 FL LCM 1:05.10."""
+    import import_meet_results as imr
+    from conftest import FakePDF
+    from test_import_meet_results import results_pages
+
+    monkeypatch.setattr(imr.pdfplumber, "open", lambda f: FakePDF(results_pages()))
+
+
+def import_pdf(page, meet_id, file=PDF_FILE):
+    page.get_by_role("button", name="Import results").click()
+    fill(page, "import-form", meet_id=meet_id)
+    page.locator("#import-form [name=pdf]").set_input_files(file)
+    page.locator("#import-form button[type=submit]").click()
+
+
+def test_import_results_adds_times_and_missing_entries(page, db, swimmer, meet, fake_results_pdf):
+    sam = crud.create_swimmer(db, schemas.SwimmerCreate(name="Sam Lee", birthdate=date(2012, 3, 1), gender="M"))
+    fly = crud.create_event(db, schemas.EventCreate(distance=100, stroke="FL", course="LCM"))
+    crud.create_meet_entry(db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=sam.id, event_id=fly.id))
+    open_app(page)
+
+    import_pdf(page, meet.id)
+
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    expect(toast(page)).to_have_text("Imported 2 times (1 new entry).")
+    expect(row(page, "entries", "Adella Barber")).to_contain_text("29.50")
+    expect(row(page, "entries", "Sam Lee")).to_contain_text("1:05.10")
+    assert page.locator("#filter-meet").input_value() == str(meet.id)
+    assert len(api(page, "/meet_entries/")) == 2  # Sam's existing entry was reused
+    assert len(api(page, "/swim_times/")) == 2
+
+
+def test_import_results_twice_reports_already_recorded(page, swimmer, meet, fake_results_pdf):
+    open_app(page)
+    import_pdf(page, meet.id)
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    import_pdf(page, meet.id)
+    expect(page.locator("#import-dialog")).to_be_hidden()
+    expect(toast(page)).to_have_text("1 result was already recorded.")
+    assert len(api(page, "/swim_times/")) == 1
+
+
+def test_import_results_defaults_to_filtered_meet(page, two_meets):
+    open_app(page)
+    page.locator("#filter-meet").select_option(str(two_meets.other_meet_id))
+    page.get_by_role("button", name="Import results").click()
+    assert page.locator("#import-form [name=meet_id]").input_value() == str(two_meets.other_meet_id)
+
+
+def test_import_results_rejects_non_pdf(page, swimmer, meet):
+    open_app(page)
+    import_pdf(page, meet.id, {"name": "notes.pdf", "mimeType": "application/pdf", "buffer": b"hello"})
+    expect(page.locator("#import-form .form-error")).to_have_text("The uploaded file isn't a PDF.")
+    expect(page.locator("#import-dialog")).to_be_visible()
+    assert api(page, "/meet_entries/") == []
+
+
+def test_import_results_needs_a_meet(page):
+    open_app(page)
+    page.get_by_role("button", name="Import results").click()
+    expect(toast(page)).to_have_text("Add the meet on the Meets tab first.")
+    expect(page.locator("#import-dialog")).to_be_hidden()

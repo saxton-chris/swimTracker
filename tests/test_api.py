@@ -13,11 +13,21 @@ def test_static_assets_served(client, path):
     assert client.get(path).status_code == 200
 
 
+@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/styles.css"])
+def test_frontend_is_revalidated_on_every_load(client, path):
+    assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_api_responses_have_no_cache_header(client):
+    assert "cache-control" not in client.get("/health").headers
+
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "running"}
 
 
 # --- swimmers --------------------------------------------------------------
+
 
 def test_swimmer_create_list_patch(client):
     r = client.post("/swimmers/", json={"name": "Ann Lee", "birthdate": "2013-02-03", "gender": "F"})
@@ -52,6 +62,7 @@ def test_swimmer_patch_allows_null_on_optional_field(client, swimmer):
 
 
 # --- meets -----------------------------------------------------------------
+
 
 def test_meet_create_list_patch(client):
     r = client.post("/meets/", json={"name": "Invite", "date": "2026-01-10"})
@@ -98,11 +109,14 @@ def test_meet_patch_end_date(client, meet):  # meet fixture: 2026-01-10, no end 
     assert r.status_code == 200 and r.json()["end_date"] is None
 
 
-@pytest.mark.parametrize("payload", [
-    {"end_date": "2026-01-09"},                          # end before the stored start
-    {"date": "2026-01-13"},                              # start moved past the stored end
-    {"date": "2026-01-20", "end_date": "2026-01-15"},    # both sent, still reversed
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"end_date": "2026-01-09"},  # end before the stored start
+        {"date": "2026-01-13"},  # start moved past the stored end
+        {"date": "2026-01-20", "end_date": "2026-01-15"},  # both sent, still reversed
+    ],
+)
 def test_meet_patch_rejects_reversed_range(client, meet, payload):
     client.patch(f"/meets/{meet.id}", json={"end_date": "2026-01-12"})
     r = client.patch(f"/meets/{meet.id}", json=payload)
@@ -121,6 +135,7 @@ def test_meet_patch_moves_whole_range(client, meet):
 
 # --- events ----------------------------------------------------------------
 
+
 def test_event_create_and_list(client):
     r = client.post("/events/", json={"distance": 100, "stroke": "BK", "course": "LCM"})
     assert r.status_code == 200
@@ -134,16 +149,20 @@ def test_event_duplicate(client, swim_event):
     assert "50 FR SCY" in r.json()["detail"]
 
 
-@pytest.mark.parametrize("payload", [
-    {"distance": 0, "stroke": "FR", "course": "SCY"},
-    {"distance": 50, "stroke": "XX", "course": "SCY"},
-    {"distance": 50, "stroke": "FR", "course": "YDS"},
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"distance": 0, "stroke": "FR", "course": "SCY"},
+        {"distance": 50, "stroke": "XX", "course": "SCY"},
+        {"distance": 50, "stroke": "FR", "course": "YDS"},
+    ],
+)
 def test_event_validation(client, payload):
     assert client.post("/events/", json=payload).status_code == 422
 
 
 # --- meet entries ----------------------------------------------------------
+
 
 def test_meet_entry_create(client, swimmer, meet, swim_event):
     payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id}
@@ -155,9 +174,14 @@ def test_meet_entry_create(client, swimmer, meet, swim_event):
     assert client.post("/meet_entries/", json=payload).status_code == 400
 
 
-@pytest.mark.parametrize("bad_field, label", [
-    ("swimmer_id", "Swimmer"), ("meet_id", "Meet"), ("event_id", "Event"),
-])
+@pytest.mark.parametrize(
+    "bad_field, label",
+    [
+        ("swimmer_id", "Swimmer"),
+        ("meet_id", "Meet"),
+        ("event_id", "Event"),
+    ],
+)
 def test_meet_entry_create_missing_fk(client, swimmer, meet, swim_event, bad_field, label):
     payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id, bad_field: 999}
     r = client.post("/meet_entries/", json=payload)
@@ -197,9 +221,14 @@ def test_meet_entry_patch_missing(client):
     assert client.patch("/meet_entries/999", json={"event_id": 1}).status_code == 404
 
 
-@pytest.mark.parametrize("field, label", [
-    ("swimmer_id", "Swimmer"), ("meet_id", "Meet"), ("event_id", "Event"),
-])
+@pytest.mark.parametrize(
+    "field, label",
+    [
+        ("swimmer_id", "Swimmer"),
+        ("meet_id", "Meet"),
+        ("event_id", "Event"),
+    ],
+)
 def test_meet_entry_patch_missing_fk(client, meet_entry, field, label):
     r = client.patch(f"/meet_entries/{meet_entry.id}", json={field: 999})
     assert r.status_code == 404
@@ -220,6 +249,7 @@ def test_meet_entry_patch_rejects_null(client, meet_entry):
 
 
 # --- swim times ------------------------------------------------------------
+
 
 def test_swim_time_create_list_patch(client, meet_entry):
     r = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "time_seconds": 32.45})
@@ -260,11 +290,18 @@ def test_swim_time_patch_validation(client, meet_entry, payload):
 
 # --- time standards --------------------------------------------------------
 
+
 def _standard(event_id, **overrides):
     return {
-        "event_id": event_id, "organization": "USA Swimming", "age_group": "11-12",
-        "gender": "F", "standard_name": "BB", "standard_rank": 2,
-        "time_seconds": 29.99, "season": "2024-2028", **overrides,
+        "event_id": event_id,
+        "organization": "USA Swimming",
+        "age_group": "11-12",
+        "gender": "F",
+        "standard_name": "BB",
+        "standard_rank": 2,
+        "time_seconds": 29.99,
+        "season": "2024-2028",
+        **overrides,
     }
 
 
@@ -282,10 +319,17 @@ def test_time_standard_missing_event(client):
 
 def test_time_standard_list_filters(client, swim_event):
     client.post("/time_standards/", json=_standard(swim_event.id))
-    client.post("/time_standards/", json=_standard(
-        swim_event.id, organization="MN Swimming", age_group="13-14", gender="M",
-        standard_name="GOLD", season="2025-2026",
-    ))
+    client.post(
+        "/time_standards/",
+        json=_standard(
+            swim_event.id,
+            organization="MN Swimming",
+            age_group="13-14",
+            gender="M",
+            standard_name="GOLD",
+            season="2025-2026",
+        ),
+    )
 
     def count(**params):
         return len(client.get("/time_standards/", params=params).json())
@@ -300,6 +344,7 @@ def test_time_standard_list_filters(client, swim_event):
 
 
 # --- deletes ---------------------------------------------------------------
+
 
 @pytest.mark.parametrize("path", ["/swimmers/999", "/meets/999", "/meet_entries/999", "/swim_times/999"])
 def test_delete_missing(client, path):
@@ -332,10 +377,12 @@ def two_entries(client, meet_entry, swimmer, meet, swim_event):
     and a third sharing its swimmer at another meet; all three have times."""
     other_swimmer = client.post("/swimmers/", json={"name": "B", "birthdate": "2013-01-01", "gender": "M"}).json()
     other_meet = client.post("/meets/", json={"name": "Other", "date": "2026-02-01"}).json()
-    same_meet = client.post("/meet_entries/", json={
-        "meet_id": meet.id, "swimmer_id": other_swimmer["id"], "event_id": swim_event.id}).json()
-    same_swimmer = client.post("/meet_entries/", json={
-        "meet_id": other_meet["id"], "swimmer_id": swimmer.id, "event_id": swim_event.id}).json()
+    same_meet = client.post(
+        "/meet_entries/", json={"meet_id": meet.id, "swimmer_id": other_swimmer["id"], "event_id": swim_event.id}
+    ).json()
+    same_swimmer = client.post(
+        "/meet_entries/", json={"meet_id": other_meet["id"], "swimmer_id": swimmer.id, "event_id": swim_event.id}
+    ).json()
     for entry_id in (meet_entry.id, same_meet["id"], same_swimmer["id"]):
         _add_time(client, entry_id)
     return same_meet, same_swimmer

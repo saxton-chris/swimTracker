@@ -47,6 +47,7 @@ def test_db_path_is_next_to_module():
 
 def test_create_db_script(monkeypatch, capsys):
     from sqlalchemy import create_engine
+
     eng = create_engine("sqlite://")
     monkeypatch.setattr(database, "engine", eng)
     runpy.run_module("create_db", run_name="__main__")
