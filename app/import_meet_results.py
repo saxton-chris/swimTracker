@@ -151,7 +151,9 @@ def process_column(rows, skip_counts):
         text = " ".join(w["text"] for w in words)
 
         m = EVENT_RE.match(text)
-        if m:
+        # EVENT_RE accepts any LC/SC + Meter/Yard pairing, but "LC Yard" isn't a
+        # real course - let it fall through to the unrecognized-header warning.
+        if m and (m.group("course"), m.group("unit")) in COURSE_MAP:
             if m.group("relay") or m.group("timetrial") or m.group("stroke") not in STROKE_MAP:
                 current_event = None  # unsupported block - its rows get skipped below
             else:

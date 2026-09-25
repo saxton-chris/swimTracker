@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards. There is no frontend, test suite, or linter configured yet.
+A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards. There is no frontend or linter configured yet.
 
 ## Commands
 
@@ -20,6 +20,16 @@ uvicorn main:app --reload               # run API; interactive docs at /docs
 python import_time_standards.py         # bulk-load standards from app/time_standards/*.pdf
 python import_meet_results.py results.pdf --meet-id 3 [--team WEST-MN]
 ```
+
+Tests run from the **repo root** (`pytest.ini` puts `app/` on the path and enables coverage):
+
+```powershell
+pip install -r requirements-dev.txt
+pytest                                             # full suite + coverage report
+pytest tests/test_api.py::test_event_duplicate     # single test
+```
+
+Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
 
 There is no migration tool (no Alembic). Schema changes to `models.py` require deleting `app/swim_tracker.db` and re-running `create_db.py` + the import scripts. The `*.db` file and `time_standards/` PDF folder are gitignored.
 
