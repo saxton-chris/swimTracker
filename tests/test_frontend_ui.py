@@ -406,6 +406,36 @@ def test_filters(page, two_meets):
     expect(page.locator("#entries-empty")).to_have_text("No entries match these filters.")
 
 
+def test_entries_headers_are_left_aligned(page, seeded):
+    open_app(page)
+    aligns = page.locator("#view-entries thead th").evaluate_all("ths => ths.map(th => getComputedStyle(th).textAlign)")
+    assert set(aligns) <= {"left", "start"}, aligns
+
+
+def test_collapse_and_expand_a_meet(page, two_meets):
+    open_app(page)
+    winter = page.get_by_role("button", name="Winter Invite")
+    expect(winter).to_have_attribute("aria-expanded", "true")
+
+    winter.click()
+    expect(winter).to_have_attribute("aria-expanded", "false")
+    expect(winter).to_be_focused()  # focus survives the re-render, for keyboard users
+    expect(page.locator("#entries-body tr.entry")).to_have_count(1)  # only Spring Champs' entry is left
+    expect(row(page, "entries", "Winter Invite")).to_contain_text("2 entries hidden")
+    expect(row(page, "entries", "Spring Champs").locator(".meet-count")).to_have_count(0)
+
+    # The choice is remembered across reloads (and filter changes re-render with it).
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#entries-body tr.entry")).to_have_count(1)
+    page.select_option("#filter-swimmer", str(two_meets.ben_id))
+    expect(row(page, "entries", "Winter Invite")).to_contain_text("1 entry hidden")
+
+    page.get_by_role("button", name="Winter Invite").press("Enter")
+    expect(page.get_by_role("button", name="Winter Invite")).to_have_attribute("aria-expanded", "true")
+    expect(page.locator("#entries-body tr.entry")).to_have_count(2)  # Ben at both meets
+    expect(page.locator(".meet-count")).to_have_count(0)
+
+
 def test_clicking_meet_or_swimmer_name_filters_entries(page, two_meets):
     open_app(page, "meets")
     row(page, "meets", "Spring Champs").get_by_role("button", name="Spring Champs").click()

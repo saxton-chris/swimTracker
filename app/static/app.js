@@ -260,14 +260,16 @@ function renderEntries() {
 
   // Rows are sorted by meet, so each meet's entries sit under one heading row
   // (name and dates shown once) instead of repeating them in every row.
-  const tableRows = [];
-  let currentMeet = null;
+  const groups = [];
   for (const r of rows) {
-    if (r.meet !== currentMeet) {
-      currentMeet = r.meet;
-      tableRows.push(meetHeading(r.meet));
-    }
-    tableRows.push(entryRow(r));
+    if (!groups.length || groups[groups.length - 1].meet !== r.meet) groups.push({ meet: r.meet, rows: [] });
+    groups[groups.length - 1].rows.push(r);
+  }
+  const tableRows = [];
+  for (const { meet, rows: meetRows } of groups) {
+    const collapsed = collapsedMeets.has(meet.id);
+    tableRows.push(meetHeading(meet, meetRows.length, collapsed));
+    if (!collapsed) tableRows.push(...meetRows.map(entryRow));
   }
   document.getElementById("entries-body").replaceChildren(...tableRows);
 
@@ -278,15 +280,50 @@ function renderEntries() {
 
 const ENTRY_COLUMNS = 5;
 
-function meetHeading(meet) {
-  return el("tr", { class: "meet-heading" },
+// Meets the viewer has collapsed on the Entries tab. Kept in this browser only
+// (a display preference, not data), and optional: without storage nothing is remembered.
+const COLLAPSED_KEY = "swimTracker.collapsedMeets";
+const collapsedMeets = (() => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY)) || []);
+  } catch {
+    return new Set();
+  }
+})();
+
+function toggleMeet(meetId) {
+  if (collapsedMeets.has(meetId)) collapsedMeets.delete(meetId);
+  else collapsedMeets.add(meetId);
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedMeets]));
+  } catch {
+    // storage unavailable: the choice still applies until the page reloads
+  }
+  renderEntries();
+  // Re-rendering replaced the button; keep keyboard focus on it.
+  document.querySelector(`#entries-body .meet-toggle[data-meet-id="${meetId}"]`)?.focus();
+}
+
+function meetHeading(meet, entryCount, collapsed) {
+  const toggle = el("button", {
+    type: "button",
+    class: "meet-toggle",
+    title: collapsed ? "Show results" : "Hide results",
+    onclick: () => toggleMeet(meet.id),
+  }, el("span", { class: "meet-name", textContent: meet.name }));
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.dataset.meetId = String(meet.id);
+
+  return el("tr", { class: collapsed ? "meet-heading collapsed" : "meet-heading" },
     // The " " text nodes keep the parts separate for screen readers and copy/paste; CSS sets the visual gap.
     el("th", { colSpan: ENTRY_COLUMNS, scope: "colgroup" },
-      el("span", { class: "meet-name", textContent: meet.name }),
+      toggle,
       " ",
       el("span", { class: "meet-dates", textContent: formatMeetDates(meet) }),
       meet.location ? " " : null,
-      meet.location ? el("span", { class: "meet-location", textContent: meet.location }) : null));
+      meet.location ? el("span", { class: "meet-location", textContent: meet.location }) : null,
+      collapsed ? " " : null,
+      collapsed ? el("span", { class: "meet-count", textContent: plural(entryCount, "entry", "entries") + " hidden" }) : null));
 }
 
 function entryRow({ entry, meet, swimmer, event, time }) {
@@ -294,8 +331,8 @@ function entryRow({ entry, meet, swimmer, event, time }) {
     el("td", { class: "c-swimmer", textContent: swimmer.name }),
     el("td", { class: "c-event", textContent: event.name }),
     time
-      ? el("td", { class: "num c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }))
-      : el("td", { class: "num c-time pending", textContent: "—" }),
+      ? el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }))
+      : el("td", { class: "c-time pending", textContent: "—" }),
     el("td", { class: "notes c-notes", textContent: (time && time.notes) || "" }),
     el("td", { class: "actions" },
       actionButton(time ? "Edit" : "Add time", () => openEntryDialog(entry)),
