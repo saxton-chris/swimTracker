@@ -13,6 +13,15 @@ def test_static_assets_served(client, path):
     assert client.get(path).status_code == 200
 
 
+@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/styles.css"])
+def test_frontend_is_revalidated_on_every_load(client, path):
+    assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_api_responses_have_no_cache_header(client):
+    assert "cache-control" not in client.get("/health").headers
+
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "running"}
 

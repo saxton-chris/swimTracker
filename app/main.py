@@ -18,6 +18,17 @@ app.include_router(swim_times.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.middleware("http")
+async def revalidate_frontend(request, call_next):
+    """Make browsers re-check the page and its static files on every load.
+    Without a Cache-Control header they guess a cache lifetime, and can keep
+    running an old app.js against a new index.html after an update."""
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html")
