@@ -4,3 +4,5 @@ __pycache__/
 .env
 *.db
 time_standards/
+.coverage
+.pytest_cache/
