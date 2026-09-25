@@ -402,6 +402,14 @@ legend { font: 600 1rem/1 var(--font-display); color: var(--text); padding: 0 6p
 .form-error { margin: 0; color: var(--danger); font-size: 0.9rem; font-weight: 500; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+/* Progress chart dialog */
+dialog.wide { width: min(880px, calc(100vw - 32px)); }
+.chart-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.chart-head h2 { margin-bottom: 4px; }
+#chart-summary { margin-bottom: 8px; }
+.chart { width: 100%; height: min(420px, 60vh); }
+button.link.event-link { padding-left: 0; text-align: left; font-weight: 500; }
+
 /* --- toast ---------------------------------------------------------------- */
 
 .toast {

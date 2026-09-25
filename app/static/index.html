@@ -237,6 +237,16 @@
     </form>
   </dialog>
 
+  <dialog id="chart-dialog" class="wide" aria-labelledby="chart-title">
+    <div class="chart-head">
+      <h2 id="chart-title"></h2>
+      <button type="button" id="chart-close">Close</button>
+    </div>
+    <p class="hint" id="chart-summary"></p>
+    <div id="chart" class="chart"></div>
+    <p class="empty" id="chart-empty" hidden>No timed results for this event yet (DQs aren't charted).</p>
+  </dialog>
+
   <script type="module" src="/static/main.js"></script>
 </body>
 </html>

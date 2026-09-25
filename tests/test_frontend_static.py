@@ -4,7 +4,8 @@ import re
 from pathlib import Path
 
 STATIC = Path(__file__).parent.parent / "app" / "static"
-JS_FILES = sorted(STATIC.rglob("*.js"))
+# Our modules only: vendor/ holds third-party builds (Plotly), loaded with a <script> tag on demand.
+JS_FILES = sorted(f for f in STATIC.rglob("*.js") if "vendor" not in f.relative_to(STATIC).parts)
 
 
 def js_source():
@@ -34,6 +35,13 @@ def test_index_html_references_existing_assets():
     assert '<script type="module" src="/static/main.js">' in html
     for ref in refs:
         assert (STATIC / ref).is_file()
+
+
+def test_vendored_plotly_is_where_the_chart_loads_it_from():
+    source = (STATIC / "progress-chart.js").read_text(encoding="utf-8")
+    [src] = re.findall(r'PLOTLY_SRC = "/static/([^"]+)"', source)
+    assert (STATIC / src).is_file()
+    assert (STATIC / "vendor" / "plotly-LICENSE.txt").is_file()
 
 
 def test_every_relative_import_resolves_to_a_file():
