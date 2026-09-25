@@ -174,7 +174,8 @@ def test_table_cells_fill_their_rows(page, db, seeded, view):
     page.set_viewport_size({"width": 1100, "height": 800})
     open_app(page, view)
     bottoms = page.evaluate(f"""() => [...document.querySelectorAll('#{view}-body tr')].map(tr =>
-        [...tr.children].map(td => Math.round(td.getBoundingClientRect().bottom)))""")
+        [...tr.children].filter(td => td.getClientRects().length)  // skip hidden cells (e.g. Standard)
+            .map(td => Math.round(td.getBoundingClientRect().bottom)))""")
     assert bottoms and all(len(set(row)) == 1 for row in bottoms), bottoms
 
 
@@ -1086,3 +1087,120 @@ def test_collapse_age_groups(page, standards):
     page.get_by_role("button", name="10 & under").click()
     expect(std_rows(page)).to_have_count(6)
     expect(page.locator(".group-count")).to_have_count(0)
+
+
+# --- entries: compare to a standard ------------------------------------------------
+
+
+@pytest.fixture
+def entry_standards(db, seeded):
+    """USA 11-12/13-14 Girls and MN 11-12 Girls standards for the seeded 50 FR SCY.
+    Adella (born 2014-05-01) swam 32.45 at Winter Invite (2026-01-10), aged 11."""
+
+    def add(org, season, age, tier, rank, seconds, gender="F"):
+        crud.create_time_standard(
+            db,
+            schemas.TimeStandardCreate(
+                event_id=seeded.event_id, organization=org, season=season, age_group=age,
+                gender=gender, standard_name=tier, standard_rank=rank, time_seconds=seconds,
+            ),
+        )  # fmt: skip
+
+    for tier, rank, secs in (("B", 1, 35.19), ("BB", 2, 32.59), ("A", 3, 30.09)):
+        add("USA Swimming", "2024-2028", "11-12", tier, rank, secs)
+    for tier, rank, secs in (("B", 1, 33.0), ("A", 3, 29.0)):
+        add("USA Swimming", "2024-2028", "13-14", tier, rank, secs)
+    for tier, rank, secs in (("SLVR", 2, 35.39), ("GOLD", 3, 31.19)):
+        add("MN Swimming", "2025-2026", "11-12", tier, rank, secs)
+    return seeded
+
+
+def standing(page, swimmer):
+    return row(page, "entries", swimmer).locator("td.c-standing")
+
+
+def compare_to(page, label):
+    page.select_option("#entries-standard", label=label)
+
+
+def test_standard_column_shows_reached_and_next(page, entry_standards):
+    open_app(page)
+    expect(page.locator("#entries-standard option")).to_have_text(
+        ["No standard", "MN Swimming (2025-2026)", "USA Swimming (2024-2028)"]
+    )
+    expect(page.locator("#entries-table th.c-standing")).to_be_hidden()  # no standard chosen yet
+
+    compare_to(page, "USA Swimming (2024-2028)")
+    expect(page.locator("#entries-table th.c-standing")).to_be_visible()
+    adella = standing(page, "Adella Barber")
+    expect(adella.locator(".std-badge")).to_have_text("BB")
+    expect(adella.locator(".std-next")).to_have_text("2.36 to A (30.09)")
+    expect(adella).to_have_attribute("title", "Age 11 at this meet: 11-12")
+    expect(standing(page, "Ben Cho")).to_have_text("")  # no time yet
+
+    compare_to(page, "MN Swimming (2025-2026)")
+    expect(adella.locator(".std-badge")).to_have_text("SLVR")
+    expect(adella.locator(".std-next")).to_have_text("1.26 to GOLD (31.19)")
+
+    compare_to(page, "No standard")
+    expect(page.locator("#entries-table th.c-standing")).to_be_hidden()
+
+
+def test_standard_choice_is_remembered(page, entry_standards):
+    open_app(page)
+    compare_to(page, "USA Swimming (2024-2028)")
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#entries-standard")).to_have_value("USA Swimming|2024-2028")
+    expect(standing(page, "Adella Barber").locator(".std-badge")).to_have_text("BB")
+
+
+@pytest.mark.parametrize(
+    "seconds, badge, next_text",
+    [
+        (29.5, "A", "Top standard"),
+        (36.0, None, "0.81 to B (35.19)"),  # hasn't reached the first tier yet
+    ],
+)
+def test_standard_top_and_not_yet(page, db, entry_standards, seconds, badge, next_text):
+    crud.update_swim_time(db, 1, schemas.SwimTimeUpdate(time_seconds=seconds))
+    open_app(page)
+    compare_to(page, "USA Swimming (2024-2028)")
+    cell = standing(page, "Adella Barber")
+    expect(cell.locator(".std-next")).to_have_text(next_text)
+    if badge:
+        expect(cell.locator(".std-badge")).to_have_text(badge)
+    else:
+        expect(cell.locator(".std-badge")).to_have_count(0)
+
+
+def test_standard_uses_age_on_the_meet_date(page, db, entry_standards):
+    """The same swimmer at a later meet, after turning 13, is compared to 13-14."""
+    later = crud.create_meet(db, schemas.MeetCreate(name="Summer Champs", date=date(2027, 7, 1)))
+    entry = crud.create_meet_entry(
+        db,
+        schemas.MeetEntryCreate(
+            meet_id=later.id, swimmer_id=entry_standards.adella_id, event_id=entry_standards.event_id
+        ),
+    )
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=30.0))
+    open_app(page)
+    page.select_option("#filter-meet", str(later.id))
+    compare_to(page, "USA Swimming (2024-2028)")
+    cell = standing(page, "Adella Barber")
+    expect(cell).to_have_attribute("title", "Age 13 at this meet: 13-14")
+    expect(cell.locator(".std-badge")).to_have_text("B")
+    expect(cell.locator(".std-next")).to_have_text("1.00 to A (29.00)")
+
+
+def test_standard_blank_for_dq_and_missing_standards(page, db, entry_standards):
+    crud.update_swim_time(db, 1, schemas.SwimTimeUpdate(dq=True, dq_reason="False start", time_seconds=None))
+    open_app(page)
+    compare_to(page, "USA Swimming (2024-2028)")
+    expect(standing(page, "Adella Barber")).to_have_text("")  # a DQ isn't compared
+
+    # Ben is a boy: these standards are Girls only, so there's nothing to compare to.
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry_standards.ben_entry_id, time_seconds=33.0))
+    page.reload(wait_until="networkidle")
+    ben = standing(page, "Ben Cho")
+    expect(ben.locator(".std-none")).to_have_text("—")
+    expect(ben).to_have_attribute("title", "No standard for 50 FR SCY, 13-14")

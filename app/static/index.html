@@ -33,14 +33,17 @@
         <label>Swimmer
           <select id="filter-swimmer"><option value="">All swimmers</option></select>
         </label>
+        <label>Compare to standard
+          <select id="entries-standard"><option value="">No standard</option></select>
+        </label>
         <span class="spacer"></span>
         <button type="button" id="import-results">Import results</button>
         <button type="button" class="primary" id="add-entry">+ Add entry</button>
       </div>
       <div class="table-wrap">
-        <table>
+        <table id="entries-table">
           <thead>
-            <tr><th>Swimmer</th><th>Event</th><th>Time</th><th>Notes</th><th></th></tr>
+            <tr><th>Swimmer</th><th>Event</th><th>Time</th><th class="c-standing">Standard</th><th>Notes</th><th></th></tr>
           </thead>
           <tbody id="entries-body"></tbody>
         </table>

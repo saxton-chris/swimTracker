@@ -1,26 +1,20 @@
 // Time Standards tab: read-only reference data, one organization + season at a time.
 
-import { api } from "../api.js";
 import { groupToggle, hiddenCount, storedSet } from "../collapse.js";
 import { el } from "../dom.js";
 import { formatTime } from "../format.js";
+import { loadSet, loadedSet, setKey, setLabel } from "../standards-data.js";
 import { COURSE_ORDER, STROKE_ORDER, byId, state } from "../store.js";
 import { toast } from "../toast.js";
 
 const STROKE_LABELS = { FR: "Free (FR)", BK: "Back (BK)", BR: "Breast (BR)", FL: "Fly (FL)", IM: "IM" };
 const GENDER_LABELS = { F: "Girls", M: "Boys" };
 
-// Standards are big (thousands of rows) and never change while the page is open,
-// so each set is fetched only when first selected, then kept.
-const standardsCache = new Map(); // setKey -> rows, or a Promise while loading
-
 const collapsedAgeGroups = storedSet("swimTracker.collapsedAgeGroups"); // "org|season|age group"
 
 // Age groups ticked in the Age groups filter. Empty means all of them.
 const selectedAgeGroups = new Set();
 
-const setKey = (s) => `${s.organization}|${s.season}`;
-const setLabel = (s) => `${s.organization} (${s.season})`;
 const unique = (values) => [...new Set(values)];
 
 /** "8 & Under" < "10 & Under/9-10" < "11-12" < "15-16/17 & Over/Senior": by the first number in the name. */
@@ -90,8 +84,8 @@ export function renderStandards() {
     empty.textContent = text;
   };
 
-  const rows = standardsCache.get(setSelect.value);
-  if (!setSelect.value || !Array.isArray(rows)) {
+  const rows = loadedSet(setSelect.value);
+  if (!setSelect.value || !rows) {
     filters.forEach((s) => (s.disabled = true));
     setAgeGroupFilterEnabled(false);
     if (!state.standardSets.length) {
@@ -199,19 +193,20 @@ export function renderStandards() {
   empty.hidden = true;
 }
 
+const loading = new Set(); // set keys this tab is waiting on, so repeat renders don't stack up loads
+
 async function loadStandardSet(key) {
-  if (standardsCache.has(key)) return; // already loaded, or loading
+  if (loading.has(key)) return;
+  loading.add(key);
   const set = state.standardSets.find((s) => setKey(s) === key);
-  const params = new URLSearchParams({ organization: set.organization, season: set.season });
-  const loading = api("GET", `/time_standards/?${params}`);
-  standardsCache.set(key, loading);
   try {
-    standardsCache.set(key, await loading);
+    await loadSet(set);
   } catch (err) {
-    standardsCache.delete(key);
     // Back to "Select a standard…"; choosing it again retries.
     document.getElementById("standard-set").value = "";
     toast(`Couldn't load ${setLabel(set)}: ${err.message}`, true);
+  } finally {
+    loading.delete(key);
   }
   renderStandards();
 }
