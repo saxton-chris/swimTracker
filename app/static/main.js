@@ -9,7 +9,7 @@
 //   views/*.js   one module per tab (plus the import dialog), each exporting its render function
 
 import { onRefresh, refresh } from "./store.js";
-import { showView } from "./tabs.js";
+import { initTabs, showView } from "./tabs.js";
 import { renderEntries } from "./views/entries.js";
 import "./views/import.js";
 import { renderMeets } from "./views/meets.js";
@@ -22,9 +22,6 @@ onRefresh(renderMeets);
 onRefresh(renderEntries);
 onRefresh(renderStandards);
 
-document.querySelectorAll(".tab").forEach((tab) =>
-  tab.addEventListener("click", () => showView(tab.dataset.view))
-);
-
+initTabs();
 showView(location.hash.slice(1));
 refresh();

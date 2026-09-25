@@ -1,15 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
 import crud
 import schemas
-from database import get_db
+from database import DbSession
 
 router = APIRouter(prefix="/meet_entries", tags=["meet_entries"])
 
 
 @router.post("/", response_model=schemas.MeetEntryOut)
-def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: Session = Depends(get_db)):
+def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: DbSession):
     if not crud.get_swimmer_by_id(db, meet_entry.swimmer_id):
         raise HTTPException(status_code=404, detail=f"Swimmer {meet_entry.swimmer_id} not found")
     if not crud.get_meet_by_id(db, meet_entry.meet_id):
@@ -28,16 +27,12 @@ def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: Session = Depends(ge
 
 
 @router.get("/", response_model=list[schemas.MeetEntryOut])
-def list_meet_entries(
-    meet_id: int | None = None,
-    swimmer_id: int | None = None,
-    db: Session = Depends(get_db),
-):
+def list_meet_entries(db: DbSession, meet_id: int | None = None, swimmer_id: int | None = None):
     return crud.get_meet_entries(db, meet_id=meet_id, swimmer_id=swimmer_id)
 
 
 @router.patch("/{meet_entry_id}", response_model=schemas.MeetEntryOut)
-def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: Session = Depends(get_db)):
+def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: DbSession):
     existing = crud.get_meet_entry_by_id(db, meet_entry_id)
     if existing is None:
         raise HTTPException(status_code=404, detail=f"Meet entry {meet_entry_id} not found")
@@ -68,6 +63,6 @@ def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: S
 
 
 @router.delete("/{meet_entry_id}", status_code=204)
-def delete_meet_entry(meet_entry_id: int, db: Session = Depends(get_db)):
+def delete_meet_entry(meet_entry_id: int, db: DbSession):
     if not crud.delete_meet_entry(db, meet_entry_id):
         raise HTTPException(status_code=404, detail=f"Meet entry {meet_entry_id} not found")

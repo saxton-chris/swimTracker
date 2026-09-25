@@ -13,7 +13,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 # Python reads file types from the registry, where .js is sometimes "text/plain".
 mimetypes.add_type("text/javascript", ".js")
 
-app = FastAPI()
+app = FastAPI(title="Swim Tracker", summary="Meet results and time standards for a swimmer")
 app.include_router(swimmers.router)
 app.include_router(meets.router)
 app.include_router(events.router)
@@ -27,7 +27,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 async def revalidate_frontend(request, call_next):
     """Make browsers re-check the page and its static files on every load.
     Without a Cache-Control header they guess a cache lifetime, and can keep
-    running an old app.js against a new index.html after an update."""
+    running old JS modules against a new index.html after an update. Unchanged
+    files still come back as a cheap 304 thanks to the ETag."""
     response = await call_next(request)
     if request.url.path == "/" or request.url.path.startswith("/static/"):
         response.headers["Cache-Control"] = "no-cache"

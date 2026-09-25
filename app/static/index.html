@@ -14,10 +14,10 @@
   <header class="topbar">
     <h1>Swim Tracker</h1>
     <nav class="tabs" role="tablist">
-      <button class="tab" role="tab" data-view="entries">Entries &amp; Results</button>
-      <button class="tab" role="tab" data-view="swimmers">Swimmers</button>
-      <button class="tab" role="tab" data-view="meets">Meets</button>
-      <button class="tab" role="tab" data-view="standards">Time Standards</button>
+      <button type="button" class="tab" role="tab" id="tab-entries" aria-controls="view-entries" data-view="entries">Entries &amp; Results</button>
+      <button type="button" class="tab" role="tab" id="tab-swimmers" aria-controls="view-swimmers" data-view="swimmers">Swimmers</button>
+      <button type="button" class="tab" role="tab" id="tab-meets" aria-controls="view-meets" data-view="meets">Meets</button>
+      <button type="button" class="tab" role="tab" id="tab-standards" aria-controls="view-standards" data-view="standards">Time Standards</button>
     </nav>
   </header>
 
@@ -25,7 +25,7 @@
     <div id="toast" class="toast" role="status" hidden></div>
 
     <!-- Entries & Results ------------------------------------------------ -->
-    <section id="view-entries" class="view" hidden>
+    <section id="view-entries" class="view" role="tabpanel" aria-labelledby="tab-entries" hidden>
       <div class="toolbar">
         <label>Meet
           <select id="filter-meet"><option value="">All meets</option></select>
@@ -34,8 +34,8 @@
           <select id="filter-swimmer"><option value="">All swimmers</option></select>
         </label>
         <span class="spacer"></span>
-        <button id="import-results">Import results</button>
-        <button class="primary" id="add-entry">+ Add entry</button>
+        <button type="button" id="import-results">Import results</button>
+        <button type="button" class="primary" id="add-entry">+ Add entry</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -49,10 +49,10 @@
     </section>
 
     <!-- Swimmers --------------------------------------------------------- -->
-    <section id="view-swimmers" class="view" hidden>
+    <section id="view-swimmers" class="view" role="tabpanel" aria-labelledby="tab-swimmers" hidden>
       <div class="toolbar">
         <span class="spacer"></span>
-        <button class="primary" id="add-swimmer">+ Add swimmer</button>
+        <button type="button" class="primary" id="add-swimmer">+ Add swimmer</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -66,10 +66,10 @@
     </section>
 
     <!-- Meets ------------------------------------------------------------ -->
-    <section id="view-meets" class="view" hidden>
+    <section id="view-meets" class="view" role="tabpanel" aria-labelledby="tab-meets" hidden>
       <div class="toolbar">
         <span class="spacer"></span>
-        <button class="primary" id="add-meet">+ Add meet</button>
+        <button type="button" class="primary" id="add-meet">+ Add meet</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -83,7 +83,7 @@
     </section>
 
     <!-- Time standards --------------------------------------------------- -->
-    <section id="view-standards" class="view" hidden>
+    <section id="view-standards" class="view" role="tabpanel" aria-labelledby="tab-standards" hidden>
       <div class="toolbar">
         <label>Standard
           <select id="standard-set" required>

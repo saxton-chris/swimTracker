@@ -43,6 +43,10 @@ There is no migration tool (no Alembic). Schema changes to `models.py` require d
 
 Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence, duplicate checks → 404/400) → `crud.py` (all DB queries, one module for every model) → `models.py` (SQLAlchemy ORM). `schemas.py` holds Pydantic `XCreate` / `XOut` / `XUpdate` models. Routers are registered in `main.py`.
 
+- Routes take the session as `db: DbSession` (`database.py`: `Annotated[Session, Depends(get_db)]`). Put it before any parameters that have defaults.
+- `crud.py` uses SQLAlchemy 2.0 `select()` with `db.scalars(...)` / `db.execute(...)`, not the legacy `db.query()`. New rows go through `_create()`, which commits by default. `create_time_standard(..., commit=False)` leaves rows pending so `import_time_standards.py` can commit once per file; per-row commits are slow on SQLite.
+- Text fields use the constrained types at the top of `schemas.py` (`SwimmerName`, `MeetName`, `SwimmerNotes`, `Location`, `TimeNotes`). Their max lengths match the `String(n)` columns, because SQLite doesn't enforce those, and names are trimmed and can't be blank.
+
 - **DB path** is anchored in `database.py` next to the module, so uvicorn and the import scripts share one file regardless of CWD. SQLite foreign keys are enabled via a per-connection `PRAGMA`.
 - **Data model**: `Swimmer`, `Meet` (`date` is the first day; optional `end_date` is the last day of a multi-day meet, validated `>= date` on create and on PATCH against the stored values. A results file covering all days imports into the one meet; per-swim days aren't tracked because Hy-Tek results PDFs don't give them), `Event` (unique on distance+stroke+course; `name` is a computed property, not a column) → `MeetEntry` (one swimmer, one event, one meet; unique triple) → `SwimTime` (at most one per `MeetEntry`, `time_seconds` as float). `TimeStandard` is independent reference data keyed by event/organization/age_group/gender/standard_name/season, with `standard_rank` to order tiers within an organization.
 - **Times are stored as float seconds**, never formatted strings; format at the display layer.
@@ -58,7 +62,7 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 
 - `api.js`, `format.js`, `dom.js`, and `toast.js` are helpers with no app state.
 - `store.js` holds `state` (every list), `loadAll`, `refresh`, and `mutate`. Views register their render functions with `onRefresh()` instead of `store.js` importing them, which keeps the imports acyclic.
-- `dialog.js` has `setupDialog`, `collapse.js` has `storedSet`/`groupToggle`/`hiddenCount`, and `tabs.js` has `showView`.
+- `dialog.js` has `setupDialog`, and `collapse.js` has `storedSet`/`groupToggle`/`hiddenCount`. `tabs.js` has `showView` and `initTabs`, following the ARIA tabs pattern: `aria-controls`/`tabpanel`, a roving `tabindex`, and Left/Right/Home/End keys.
 - `views/entries.js`, `swimmers.js`, `meets.js`, `standards.js`, and `import.js` are one module per tab (plus the import dialog). Each wires its own event listeners at module load and exports its render function. `swimmers.js` and `meets.js` import `filterEntries` from `entries.js` for their name links.
 
 The page calls the JSON API with `fetch`, loads every list on startup, and reloads them all after each change (the dataset is small). It has four tabs: Entries & Results, Swimmers, Meets, and Time Standards.

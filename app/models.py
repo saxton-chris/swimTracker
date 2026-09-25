@@ -134,9 +134,8 @@ class TimeStandard(Base):
     age_group: Mapped[str] = mapped_column(String(50))  # e.g. "11-12", "15-16/17 & Over/Senior"
     gender: Mapped[str] = mapped_column(String(10))
     standard_name: Mapped[str] = mapped_column(String(20))  # e.g. "B", "BB", "A" or "BRNZ", "SLVR", "GOLD"
-    standard_rank: Mapped[int] = (
-        mapped_column()
-    )  # numeric order within this org's own scale, used to find "next standard up"
+    # Numeric order within this organization's own scale (B=1 ... AAAA=6), used to find "next standard up".
+    standard_rank: Mapped[int] = mapped_column()
     time_seconds: Mapped[float] = mapped_column(Float)
     season: Mapped[str] = mapped_column(String(20))  # e.g. "2025-2026" or "2024-2028"
 

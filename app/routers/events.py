@@ -1,15 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException
 
 import crud
 import schemas
-from database import get_db
+from database import DbSession
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.post("/", response_model=schemas.EventOut)
-def add_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
+def add_event(event: schemas.EventCreate, db: DbSession):
     existing = crud.get_event(db, event.distance, event.stroke, event.course)
     if existing:
         raise HTTPException(
@@ -20,5 +19,5 @@ def add_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[schemas.EventOut])
-def list_events(db: Session = Depends(get_db)):
+def list_events(db: DbSession):
     return crud.get_events(db)

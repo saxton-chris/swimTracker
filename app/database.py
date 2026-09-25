@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 # Anchor the DB file next to this module so every entry point (uvicorn, the
 # import scripts, create_db.py) uses the same file regardless of the CWD.
@@ -26,3 +28,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Route parameter type for "a DB session for this request": `db: DbSession`.
+DbSession = Annotated[Session, Depends(get_db)]
