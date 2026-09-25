@@ -9,12 +9,9 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 @router.post("/", response_model=schemas.EventOut)
 def add_event(event: schemas.EventCreate, db: DbSession):
-    existing = crud.get_event(db, event.distance, event.stroke, event.course)
+    existing = crud.get_event(db, event.distance, event.stroke, event.course, event.relay)
     if existing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Event '{event.distance} {event.stroke.value} {event.course.value}' already exists",
-        )
+        raise HTTPException(status_code=400, detail=f"Event '{existing.name}' already exists")
     return crud.create_event(db, event)
 
 

@@ -41,6 +41,7 @@ export function renderEntries() {
       a.meet.name.localeCompare(b.meet.name) ||
       a.swimmer.name.localeCompare(b.swimmer.name) ||
       a.event.course.localeCompare(b.event.course) ||
+      Number(a.event.relay) - Number(b.event.relay) || // relays after individual events
       STROKE_ORDER[a.event.stroke] - STROKE_ORDER[b.event.stroke] ||
       a.event.distance - b.event.distance
     );
@@ -80,14 +81,37 @@ function meetHeading(meet, entryCount, collapsed) {
       ...hiddenCount(collapsed, entryCount, "entry", "entries")));
 }
 
+/** "Leg 4 · split 41.94" for a relay result, or null. */
+function relayDetail(time) {
+  if (!time || (time.relay_leg == null && time.split_seconds == null)) return null;
+  const parts = [];
+  if (time.relay_leg != null) parts.push(`Leg ${time.relay_leg}`);
+  if (time.split_seconds != null) parts.push(`split ${formatTime(time.split_seconds)}`);
+  return parts.join(" · ");
+}
+
+function timeCell(time) {
+  if (!time) return el("td", { class: "c-time pending", textContent: "—" });
+  if (time.dq) {
+    // A DQ'd swim's time (if the results printed one) isn't official, so it's shown small and muted.
+    return el("td", { class: "c-time" },
+      el("span", { class: "dq-badge", textContent: "DQ", title: time.dq_reason || "Disqualified" }),
+      time.time_seconds != null ? el("span", { class: "dq-time", textContent: formatTime(time.time_seconds) }) : null);
+  }
+  return el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }));
+}
+
 function entryRow({ entry, meet, swimmer, event, time }) {
-  return el("tr", { class: "entry" },
+  const detail = relayDetail(time);
+  const notes = [time && time.dq && time.dq_reason ? `DQ: ${time.dq_reason}` : null, time && time.notes]
+    .filter(Boolean).join(" · ");
+  return el("tr", { class: time && time.dq ? "entry dq" : "entry" },
     el("td", { class: "c-swimmer", textContent: swimmer.name }),
-    el("td", { class: "c-event", textContent: event.name }),
-    time
-      ? el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }))
-      : el("td", { class: "c-time pending", textContent: "—" }),
-    el("td", { class: "notes c-notes", textContent: (time && time.notes) || "" }),
+    el("td", { class: "c-event" },
+      event.name,
+      detail ? el("span", { class: "relay-detail", textContent: detail }) : null),
+    timeCell(time),
+    el("td", { class: "notes c-notes", textContent: notes }),
     el("td", { class: "actions" },
       actionButton(time ? "Edit" : "Add time", () => openEntryDialog(entry)),
       actionButton("Delete", () => deleteEntry(entry, swimmer, event, meet), true)),
@@ -112,24 +136,56 @@ document.getElementById("filter-swimmer").addEventListener("change", renderEntri
 let editingEntry = null;
 let lastCourse = "SCY";
 
-/** Find the event for distance/stroke/course, creating it if it doesn't exist yet. */
-async function resolveEventId(distance, stroke, course) {
-  const found = state.events.find((e) => e.distance === distance && e.stroke === stroke && e.course === course);
+/** Find the event for distance/stroke/course/relay, creating it if it doesn't exist yet. */
+async function resolveEventId(distance, stroke, course, relay) {
+  const found = state.events.find((e) =>
+    e.distance === distance && e.stroke === stroke && e.course === course && e.relay === relay);
   if (found) return found.id;
-  const created = await api("POST", "/events/", { distance, stroke, course });
+  const created = await api("POST", "/events/", { distance, stroke, course, relay });
   state.events.push(created);
   return created.id;
 }
 
+const RELAY_STROKES = new Set(["FR", "IM"]); // free relay, medley relay
+
+/** Show the relay/DQ fields only when they apply, and relabel IM as "Medley" for relays. */
+function syncEntryForm() {
+  const form = document.getElementById("entry-form");
+  const relay = form.elements.relay.checked;
+  for (const option of form.elements.stroke.options) {
+    option.disabled = relay && !RELAY_STROKES.has(option.value);
+    option.textContent = relay && option.dataset.relayLabel ? option.dataset.relayLabel : option.dataset.label;
+  }
+  if (relay && !RELAY_STROKES.has(form.elements.stroke.value)) form.elements.stroke.value = "FR";
+  document.getElementById("relay-fields").hidden = !relay;
+  form.querySelector("[data-relay-text]").textContent = relay ? "Team time" : "Time";
+  document.getElementById("dq-reason-field").hidden = !form.elements.dq.checked;
+}
+
+{
+  const form = document.getElementById("entry-form");
+  for (const option of form.elements.stroke.options) option.dataset.label = option.textContent;
+  form.addEventListener("change", syncEntryForm);
+}
+
 const entryDialog = setupDialog("entry-dialog", async (f) => {
-  // Validate the time before writing anything, so a bad time can't leave a half-saved entry.
+  // Validate everything before writing anything, so bad input can't leave a half-saved entry.
+  const relay = f.relay === "on";
+  const dq = f.dq === "on";
   const seconds = parseTime(f.time);
+  const split = relay ? parseTime(f.split) : null;
+  const leg = relay && f.relay_leg ? Number(f.relay_leg) : null;
   const timeNotes = blankToNull(f.time_notes);
+  const dqReason = dq ? blankToNull(f.dq_reason) : null;
   const distance = Number(f.distance);
   if (!Number.isInteger(distance) || distance <= 0) throw new Error("Distance must be a positive whole number.");
-  if (seconds === null && timeNotes) throw new Error("Enter a time to save result notes.");
+  if (relay && !RELAY_STROKES.has(f.stroke)) throw new Error("A relay is Free or Medley.");
+  const hasResult = seconds !== null || dq;
+  if (!hasResult && (timeNotes || leg !== null || split !== null)) {
+    throw new Error("Enter a time (or mark it a DQ) to save the result details.");
+  }
 
-  const eventId = await resolveEventId(distance, f.stroke, f.course);
+  const eventId = await resolveEventId(distance, f.stroke, f.course, relay);
   lastCourse = f.course;
   const body = { meet_id: Number(f.meet_id), swimmer_id: Number(f.swimmer_id), event_id: eventId };
 
@@ -142,12 +198,20 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
   editingEntry = entry;
 
   const existing = state.times.find((t) => t.meet_entry_id === entry.id);
-  if (seconds === null && existing) {
+  const result = {
+    time_seconds: seconds,
+    notes: timeNotes,
+    dq,
+    dq_reason: dqReason,
+    relay_leg: leg,
+    split_seconds: split,
+  };
+  if (!hasResult && existing) {
     await api("DELETE", `/swim_times/${existing.id}`);
-  } else if (seconds !== null && existing) {
-    await api("PATCH", `/swim_times/${existing.id}`, { time_seconds: seconds, notes: timeNotes });
-  } else if (seconds !== null) {
-    await api("POST", "/swim_times/", { meet_entry_id: entry.id, time_seconds: seconds, notes: timeNotes });
+  } else if (hasResult && existing) {
+    await api("PATCH", `/swim_times/${existing.id}`, result);
+  } else if (hasResult) {
+    await api("POST", "/swim_times/", { meet_entry_id: entry.id, ...result });
   }
   toast(isNew ? "Entry added" : "Entry updated");
 });
@@ -172,8 +236,13 @@ function openEntryDialog(entry = null) {
       distance: event.distance,
       stroke: event.stroke,
       course: event.course,
-      time: time ? formatTime(time.time_seconds) : "",
+      relay: event.relay,
+      time: time && time.time_seconds != null ? formatTime(time.time_seconds) : "",
       time_notes: time ? time.notes : "",
+      dq: time ? time.dq : false,
+      dq_reason: time ? time.dq_reason : "",
+      relay_leg: time && time.relay_leg != null ? String(time.relay_leg) : "",
+      split: time && time.split_seconds != null ? formatTime(time.split_seconds) : "",
     };
   } else {
     // Default to whatever the Entries tab is filtered to.

@@ -44,6 +44,8 @@ def fill(page, form_id, **fields):
         field = page.locator(f"#{form_id} [name={name}]")
         if field.evaluate("e => e.tagName") == "SELECT":
             field.select_option(str(value))
+        elif field.get_attribute("type") == "checkbox":
+            field.set_checked(bool(value))
         else:
             field.fill(str(value))
 
@@ -488,6 +490,127 @@ def test_add_entry_creates_event_and_result(page, swimmer, meet):
     expect(toast(page)).to_have_text("Entry added")
 
 
+# --- entries: DQs and relays -----------------------------------------------------
+
+
+def test_add_dq_without_a_time(page, swimmer, meet):
+    open_app(page)
+    page.get_by_role("button", name="+ Add entry").click()
+    reason = page.locator("#dq-reason-field")
+    expect(reason).to_be_hidden()
+    page.locator("#entry-form [name=dq]").check()
+    expect(reason).to_be_visible()  # the reason field only shows for a DQ
+    save(page, "entry-dialog", "entry-form", distance=50, stroke="BK", course="LCM", dq_reason="Scissors kick")
+
+    [result] = api(page, "/swim_times/")
+    assert (result["dq"], result["dq_reason"], result["time_seconds"]) == (True, "Scissors kick", None)
+    dq_row = row(page, "entries", "50 BK LCM")
+    expect(dq_row.locator(".dq-badge")).to_have_text("DQ")
+    expect(dq_row.locator(".clock")).to_have_count(0)
+    expect(dq_row.locator("td.c-notes")).to_have_text("DQ: Scissors kick")
+
+
+def test_dq_keeps_the_time_swum_but_shows_it_struck_through(page, swimmer, meet):
+    open_app(page)
+    page.get_by_role("button", name="+ Add entry").click()
+    save(page, "entry-dialog", "entry-form", distance=50, stroke="FR", course="LCM", time="42.96", dq=True)
+    [result] = api(page, "/swim_times/")
+    assert (result["dq"], result["time_seconds"]) == (True, 42.96)
+    expect(row(page, "entries", "50 FR LCM").locator(".dq-time")).to_have_text("42.96")
+
+
+def test_add_relay_leg(page, swimmer, meet):
+    open_app(page)
+    page.get_by_role("button", name="+ Add entry").click()
+    form = page.locator("#entry-form")
+    expect(page.locator("#relay-fields")).to_be_hidden()
+
+    form.locator("[name=relay]").check()
+    expect(page.locator("#relay-fields")).to_be_visible()
+    expect(form.locator("[data-relay-text]")).to_have_text("Team time")
+    # Relays are Free or Medley: other strokes are disabled, IM reads "Medley".
+    expect(form.locator("[name=stroke] option[value=BK]")).to_have_js_property("disabled", True)
+    expect(form.locator("[name=stroke] option[value=IM]")).to_have_text("Medley")
+
+    save(
+        page, "entry-dialog", "entry-form",
+        distance=200, stroke="IM", course="LCM", time="3:04.99", relay_leg=4, split="41.94",
+    )  # fmt: skip
+
+    [event] = api(page, "/events/")
+    assert (event["name"], event["relay"]) == ("200 MED-R LCM", True)
+    [result] = api(page, "/swim_times/")
+    assert (result["time_seconds"], result["relay_leg"], result["split_seconds"]) == (184.99, 4, 41.94)
+    relay_row = row(page, "entries", "200 MED-R LCM")
+    expect(relay_row.locator(".clock")).to_have_text("3:04.99")
+    expect(relay_row.locator(".relay-detail")).to_have_text("Leg 4 · split 41.94")
+
+    # Unticking Relay restores the individual strokes and hides the relay fields.
+    page.get_by_role("button", name="+ Add entry").click()
+    form.locator("[name=relay]").check()
+    form.locator("[name=relay]").uncheck()
+    expect(form.locator("[name=stroke] option[value=BK]")).to_have_js_property("disabled", False)
+    expect(form.locator("[name=stroke] option[value=IM]")).to_have_text("IM")
+    expect(page.locator("#relay-fields")).to_be_hidden()
+
+
+def test_relay_and_individual_events_stay_separate(page, swimmer, meet, swim_event):
+    """50 FR SCY exists; entering a 50 FR SCY relay creates a new relay event instead of reusing it."""
+    open_app(page)
+    page.get_by_role("button", name="+ Add entry").click()
+    save(page, "entry-dialog", "entry-form", distance=50, stroke="FR", course="SCY", relay=True, time="1:59.00")
+    assert sorted(e["name"] for e in api(page, "/events/")) == ["50 FR SCY", "50 FR-R SCY"]
+
+
+@pytest.fixture
+def relay_dq(db, swimmer, meet):
+    event = crud.create_event(db, schemas.EventCreate(distance=200, stroke="FR", course="LCM", relay=True))
+    entry = crud.create_meet_entry(
+        db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=swimmer.id, event_id=event.id)
+    )
+    crud.create_swim_time(
+        db,
+        schemas.SwimTimeCreate(
+            meet_entry_id=entry.id, time_seconds=160.5, dq=True, dq_reason="Early take-off swimmer #2",
+            relay_leg=3, split_seconds=39.1,
+        ),
+    )  # fmt: skip
+    return entry
+
+
+def test_edit_relay_dq_prefills_and_can_be_un_dqd(page, relay_dq):
+    open_app(page)
+    click_row_button(page, "entries", "200 FR-R LCM", "Edit")
+    form = page.locator("#entry-form")
+    expect(form.locator("[name=relay]")).to_be_checked()
+    expect(form.locator("[name=dq]")).to_be_checked()
+    expect(form.locator("[name=relay_leg]")).to_have_value("3")
+    expect(form.locator("[name=split]")).to_have_value("39.10")
+    expect(form.locator("[name=time]")).to_have_value("2:40.50")
+    expect(form.locator("[name=dq_reason]")).to_have_value("Early take-off swimmer #2")
+    expect(page.locator("#relay-fields")).to_be_visible()
+    expect(page.locator("#dq-reason-field")).to_be_visible()
+
+    save(page, "entry-dialog", "entry-form", dq=False)
+    [result] = api(page, "/swim_times/")
+    assert (result["dq"], result["dq_reason"], result["time_seconds"], result["relay_leg"]) == (False, None, 160.5, 3)
+    expect(row(page, "entries", "200 FR-R LCM").locator(".clock")).to_have_text("2:40.50")
+
+
+@pytest.mark.parametrize(
+    "fields", [{"time_notes": "x"}, {"relay": True, "relay_leg": 2}, {"relay": True, "split": "30.00"}]
+)
+def test_result_details_need_a_time_or_dq(page, swimmer, meet, fields):
+    open_app(page)
+    page.get_by_role("button", name="+ Add entry").click()
+    fill(page, "entry-form", distance=100, stroke="FR", course="SCY", **fields)
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-form .form-error")).to_have_text(
+        "Enter a time (or mark it a DQ) to save the result details."
+    )
+    assert api(page, "/meet_entries/") == []
+
+
 def test_add_entry_reuses_existing_event_and_allows_no_time(page, swimmer, meet, swim_event):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
@@ -519,7 +642,7 @@ def test_new_entry_defaults_to_current_filters_and_last_course(page, two_meets):
     [
         ({"time": "1:75.00"}, "seconds must be under 60"),
         ({"time": "fast"}, "isn't a valid time"),
-        ({"time": "", "time_notes": "PB"}, "Enter a time to save result notes."),
+        ({"time": "", "time_notes": "PB"}, "Enter a time (or mark it a DQ) to save the result details."),
     ],
 )
 def test_invalid_entry_shows_error_and_writes_nothing(page, swimmer, meet, fields, error):

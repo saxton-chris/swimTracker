@@ -109,51 +109,72 @@ class TestParseResultRow:
 
 # --- process_column --------------------------------------------------------
 
+EVENT_50FR_SCY = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY, "relay": False}
+EVENT_200FRR_SCY = {"distance": 200, "stroke": Stroke.FR, "course": Course.SCY, "relay": True}
+
 
 def left_column_rows():
     return rows_of(
         text_row("Event 1 Girls 11-12 50 SC Yard Freestyle", 10),
         text_row("Name Age Team Seed Finals", 20),
         result_row(30, "1", "Barber, Adella F", "12", "WEST-MN", "30.00", "29.50"),
-        text_row("--- Smith, Jane 11 WEST-MN DQ", 40),
+        text_row("--- Smith, Jane 11 WEST-MN DQ 31.20", 40),
+        text_row("False start", 45),  # the DQ's reason
         text_row("15.00 29.50", 50),  # splits line
         text_row("2 Foo WEST-MN 30.00", 60),  # numbered but malformed
+        text_row("--- Roe, Kim 11 WEST-MN NS", 65),  # no-show: skipped
         text_row("Event 2 Girls 11-12 200 SC Yard Freestyle Relay", 70),
-        text_row("1 WEST-MN 1:50.00", 80),
-        text_row("--- WEST-MN DQ", 90),
-        text_row("Event 3 Girls 11-12 100 SC Yard Freestyle Extra", 100),  # header-like, unparseable
-        result_row(110, "3", "Doe, Jo", "12", "WEST-MN", "1:10.00"),
-        text_row("Hy-Tek Meet Manager", 120),
+        text_row("Team Relay Finals Time", 75),
+        text_row("1 WEST-MN A 1:50.00 40", 80),
+        text_row("1) Moe, Ann 12 2) Smith, Jane 11", 85),
+        text_row("3) Doe, Jo 12 4) Roe, Kim W11", 90),  # mixed-relay style age prefix
+        text_row("27.00 28.00 27.50 27.50", 95),  # per-leg splits, add up to 1:50.00
+        text_row("--- NORTH-MN A DQ 2:01.00", 100),
+        text_row("Early take-off swimmer #2", 105),
+        text_row("1) Lee, Ann 12 2) Poe, Liz 12", 110),
+        text_row("3) Kay, Mo 11 4) Fay, Jo 11", 115),
+        text_row("Event 3 Girls 11-12 100 SC Yard Freestyle Extra", 120),  # header-like, unparseable
+        result_row(125, "3", "Doe, Jo", "12", "WEST-MN", "1:10.00"),
+        text_row("Hy-Tek Meet Manager", 130),
     )
 
 
 def test_process_column(capsys):
-    skips = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
-    results = imr.process_column(left_column_rows(), skips)
+    skips, state = imr.new_skip_counts(), {"event": None}
+    results = imr.process_column(left_column_rows(), skips, state)
 
-    assert len(results) == 1
-    assert results[0]["name"] == "Barber, Adella F"
-    assert results[0]["event"] == {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY}
-    assert skips == {"relay_or_time_trial": 3, "dq_or_no_show": 1, "unparsed_row": 1}
+    assert [(r["name"], r["dq"]) for r in results] == [("Barber, Adella F", False), ("Smith, Jane", True)]
+    assert results[0]["event"] == EVENT_50FR_SCY
+    dq = results[1]
+    assert (dq["time_seconds"], dq["dq_reason"], dq["place"]) == (pytest.approx(31.2), "False start", None)
+    assert skips == {"unsupported_event": 1, "no_show_or_scratch": 1, "unparsed_row": 1}
     assert "unrecognized event header" in capsys.readouterr().out
+
+    west, north = state["relay_teams"]
+    assert (west["team"], west["place"], west["time_seconds"], west["dq"]) == ("WEST-MN", "1", 110.0, False)
+    assert west["swimmers"] == [(1, "Moe, Ann", 12), (2, "Smith, Jane", 11), (3, "Doe, Jo", 12), (4, "Roe, Kim", 11)]
+    assert west["splits"] == [27.0, 28.0, 27.5, 27.5]
+    assert west["event"] == EVENT_200FRR_SCY
+    assert (north["dq"], north["dq_reason"], north["place"]) == (True, "Early take-off swimmer #2", None)
 
 
 @pytest.mark.parametrize(
     "header",
     [
         "Event 4 Boys 13-14 50 SC Yard Butterfly Time Trial",
-        "Event 5 Boys 13-14 200 SC Meter Medley",  # stroke not individually supported
+        "Event 5 Boys 13-14 200 SC Meter Medley",  # "Medley" alone is only a relay stroke
+        "Event 6 Boys 13-14 200 SC Meter Backstroke Relay",  # relays are Free or Medley
     ],
 )
 def test_process_column_skips_unsupported_blocks(header):
-    skips = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
+    skips = imr.new_skip_counts()
     rows = rows_of(text_row(header, 10), result_row(20, "1", "Lee, Sam", "13", "WEST-MN", "30.00"))
     assert imr.process_column(rows, skips) == []
-    assert skips["relay_or_time_trial"] == 1
+    assert skips["unsupported_event"] == 1
 
 
 def test_process_column_unknown_course_is_skipped_with_warning(capsys):
-    skips = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
+    skips = imr.new_skip_counts()
     rows = rows_of(
         text_row("Event 1 Girls 11-12 50 SC Yard Freestyle", 10),
         result_row(20, "1", "Barber, Adella", "12", "WEST-MN", "30.00"),
@@ -166,14 +187,10 @@ def test_process_column_unknown_course_is_skipped_with_warning(capsys):
     assert "unrecognized event header" in capsys.readouterr().out
 
 
-def new_skips():
-    return {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
-
-
 def test_process_column_state_carries_event_into_next_column():
     """An event's header at the bottom of one column; its results continue at
     the top of the next column with no repeated header."""
-    skips, state = new_skips(), {"event": None}
+    skips, state = imr.new_skip_counts(), {"event": None}
     first = rows_of(
         text_row("Boys 9-10 50 LC Meter Freestyle", 10),
         result_row(20, "1", "Gallant, Seb M", "10", "TUNA-MN", "32.64"),
@@ -186,45 +203,98 @@ def test_process_column_state_carries_event_into_next_column():
     [carried] = imr.process_column(second, skips, state)
     assert carried["name"] == "Saxton, Alistair B"
     assert carried["time_seconds"] == pytest.approx(36.16)
-    assert carried["event"] == {"distance": 50, "stroke": Stroke.FR, "course": Course.LCM}
-    assert skips == new_skips()  # nothing miscounted as a relay skip
+    assert carried["event"] == {"distance": 50, "stroke": Stroke.FR, "course": Course.LCM, "relay": False}
+    assert skips == imr.new_skip_counts()  # nothing miscounted as a skip
 
 
 def test_process_column_without_state_starts_fresh():
-    skips = new_skips()
+    skips = imr.new_skip_counts()
     rows = rows_of(result_row(10, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16"))
     assert imr.process_column(rows, skips) == []
-    assert skips["relay_or_time_trial"] == 1
+    assert skips["unsupported_event"] == 1
 
 
-def test_process_column_state_carries_skipped_block_too():
-    """A relay continuing into the next column must stay skipped, not be
-    attributed to whatever individual event came before it."""
-    skips, state = new_skips(), {"event": None}
+def test_relay_continues_into_next_column():
+    """A relay team's row at a column's bottom; its swimmers and splits at the top of the next."""
+    skips, state = imr.new_skip_counts(), {"event": None}
+    imr.process_column(
+        rows_of(text_row("Girls 9-10 200 LC Meter Medley Relay", 10), text_row("2 EDI-MN A 3:10.00 34", 700)),
+        skips,
+        state,
+    )
     imr.process_column(
         rows_of(
-            text_row("Girls 9-10 50 LC Meter Backstroke", 10),
-            result_row(20, "1", "Lee, Sam", "10", "WEST-MN", "40.00"),
-            text_row("Girls 9-10 200 LC Meter Medley Relay", 30),
+            text_row("1) Aa, Bo 10 2) Cc, Di 10", 10),
+            text_row("3) Ee, Fi 9 4) Gg, Hu 10", 20),
+            text_row("50.00 45.00 50.00 45.00", 30),
         ),
         skips,
         state,
     )
-    assert imr.process_column(rows_of(text_row("2 EDI-MN A 3:10.00 34", 10)), skips, state) == []
-    assert state["event"] is None
+    [team] = state["relay_teams"]
+    assert team["event"] == {"distance": 200, "stroke": Stroke.IM, "course": Course.LCM, "relay": True}
+    assert [s[1] for s in team["swimmers"]] == ["Aa, Bo", "Cc, Di", "Ee, Fi", "Gg, Hu"]
+    assert team["splits"] == [50.0, 45.0, 50.0, 45.0]
+
+
+def test_relay_no_show_is_skipped():
+    skips, state = imr.new_skip_counts(), {"event": None}
+    rows = rows_of(
+        text_row("Girls 9-10 200 LC Meter Freestyle Relay", 10),
+        text_row("--- EDI-MN A NS", 20),
+        text_row("1) Aa, Bo 10 2) Cc, Di 10", 30),  # belongs to the no-show team: not attached anywhere
+    )
+    imr.process_column(rows, skips, state)
+    assert state["relay_teams"] == []
+    assert skips["no_show_or_scratch"] == 1
+
+
+@pytest.mark.parametrize(
+    "next_row, reason",
+    [
+        ("Scissors kick", "Scissors kick"),
+        ("41.34 49.19", None),  # a splits line
+        ("--- Doe, Jo 10 WEST-MN DQ 42.25", None),  # the next DQ
+        ("Girls 9-10 100 LC Meter Butterfly", None),  # the next event
+        ("Rochester Aquatic Center - MN - Site License", None),  # page furniture
+    ],
+)
+def test_dq_reason_is_only_the_next_descriptive_row(next_row, reason):
+    rows = rows_of(
+        text_row("Girls 9-10 50 LC Meter Backstroke", 10),
+        text_row("--- Zeuli, Ella C 10 RSC-MN DQ 1:02.97", 20),
+        text_row(next_row, 30),
+    )
+    results = imr.process_column(rows, imr.new_skip_counts())
+    assert results[0]["dq_reason"] == reason
+
+
+def test_dq_reason_is_not_taken_from_the_next_column():
+    """A DQ at a column's bottom: the next column's first row is page furniture, not its reason."""
+    skips, state = imr.new_skip_counts(), {"event": None}
+    [dq] = imr.process_column(
+        rows_of(text_row("Girls 9-10 50 LC Meter Backstroke", 10), text_row("--- Zeuli, Ella C 10 RSC-MN DQ", 700)),
+        skips,
+        state,
+    )
+    imr.process_column(rows_of(text_row("MN LC 10&U State", 5)), skips, state)
+    assert dq["dq_reason"] is None
 
 
 @pytest.mark.parametrize(
     "header, expected_event",
     [
-        ("(Boys 9-10 100 LC Meter Backstroke)", {"distance": 100, "stroke": Stroke.BK, "course": Course.LCM}),
-        ("(Boys 8 & Under 200 LC Meter Freestyle Relay)", None),
+        (
+            "(Boys 9-10 100 LC Meter Backstroke)",
+            {"distance": 100, "stroke": Stroke.BK, "course": Course.LCM, "relay": False},
+        ),
+        ("(Boys 8 & Under 50 LC Meter Freestyle Time Trial)", None),
     ],
 )
 def test_process_column_parenthesized_continuation_header(header, expected_event):
     """Page-top '(Event ...)' continuation headers set the event, overriding stale state."""
-    stale = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY}
-    skips, state = new_skips(), {"event": stale}
+    stale = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY, "relay": False}
+    skips, state = imr.new_skip_counts(), {"event": stale}
     results = imr.process_column(
         rows_of(
             text_row(header, 10),
@@ -235,6 +305,76 @@ def test_process_column_parenthesized_continuation_header(header, expected_event
     )
     assert state["event"] == expected_event
     assert [r["event"] for r in results] == ([expected_event] if expected_event else [])
+
+
+# --- unplaced rows, relay rows, splits ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("--- Breczinski, Simon 10 BASS-MN DQ 42.96", ("Breczinski, Simon", 10, "BASS-MN", 42.96, "DQ", False)),
+        ("--- Perfect, Hunter 10 RFSC-MN DQ DQ", ("Perfect, Hunter", 10, "RFSC-MN", None, "DQ", False)),
+        ("--- McGovern, Mavis M 7 HURR-MN X59.34", ("McGovern, Mavis M", 7, "HURR-MN", 59.34, None, True)),
+        ("--- Acosta, Jojo R 8 PRNH-MN SCR", ("Acosta, Jojo R", 8, "PRNH-MN", None, "SCR", False)),
+    ],
+)
+def test_parse_unplaced_row(text, expected):
+    r = imr.parse_unplaced_row(text_row(text, 0))
+    assert (r["name"], r["age"], r["team"], r["time_seconds"], r["mark"], r["exhibition"]) == expected
+
+
+@pytest.mark.parametrize("text", ["--- WEST-MN DQ", "1 Barber, Adella 12 WEST-MN 30.00", "--- Doe, Jo WEST-MN DQ"])
+def test_parse_unplaced_row_rejects(text):
+    assert imr.parse_unplaced_row(text_row(text, 0)) is None
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("1 WEST-MN A 2:39.11 40", ("1", "WEST-MN", 159.11, False, False)),
+        ("23 WEST-MN A 3:05.20 3:04.99", ("23", "WEST-MN", 184.99, False, False)),  # seed, then finals
+        ("--- NOR-MN A DQ 4:28.60", (None, "NOR-MN", 268.6, True, False)),
+        ("--- EDI-MN B SCR", (None, "EDI-MN", None, False, True)),
+    ],
+)
+def test_parse_relay_team_row(text, expected):
+    t = imr.parse_relay_team_row(text_row(text, 0))
+    assert (t["place"], t["team"], t["time_seconds"], t["dq"], t["no_show"]) == expected
+
+
+@pytest.mark.parametrize("text", ["1 Barber, Adella 12 WEST-MN 30.00", "1 WEST-MN 1:50.00", "1) Aa, Bo 10"])
+def test_parse_relay_team_row_rejects(text):
+    assert imr.parse_relay_team_row(text_row(text, 0)) is None
+
+
+@pytest.mark.parametrize(
+    "splits, team_time, expected",
+    [
+        ([42.17, 58.24, 42.64, 41.94], 184.99, [42.17, 58.24, 42.64, 41.94]),  # per-leg
+        ([37.37, 76.76, 121.68, 159.11], 159.11, [37.37, 39.39, 44.92, 37.43]),  # cumulative
+        ([47.53, 48.91, 85.73], 182.17, None),  # 3 values: can't tell which legs
+        ([40.0, 40.0, 40.0, 40.0], 170.0, None),  # neither adds up: don't guess
+        ([40.0, 40.0, 40.0, 40.0], None, None),  # relay DQ without a time
+    ],
+)
+def test_relay_leg_splits(splits, team_time, expected):
+    got = imr.relay_leg_splits(splits, team_time)
+    assert got == (pytest.approx(expected) if expected else None)
+
+
+def test_relay_results_one_per_swimmer():
+    team = imr.parse_relay_team_row(text_row("5 WEST-MN A 3:04.99", 0))
+    team.update(
+        event=EVENT_200FRR_SCY,
+        swimmers=[(1, "Aa, Bo", 10), (2, "Cc, Di", 10), (3, "Ee, Fi", 10), (4, "Saxton, Alistair B", 10)],
+        splits=[42.17, 58.24, 42.64, 41.94],
+    )
+    results = imr.relay_results(team)
+    assert len(results) == 4
+    mine = results[3]
+    assert (mine["name"], mine["relay_leg"], mine["split_seconds"]) == ("Saxton, Alistair B", 4, 41.94)
+    assert (mine["time_seconds"], mine["place"], mine["team"], mine["dq"]) == (184.99, "5", "WEST-MN", False)
 
 
 # --- parse_pdf -------------------------------------------------------------
@@ -251,13 +391,25 @@ def test_parse_pdf_splits_columns(fake_pdfplumber):
     fake_pdfplumber(imr, {"results.pdf": results_pages()})
     results, skips = imr.parse_pdf("results.pdf")
 
-    assert [(r["name"], r["team"]) for r in results] == [
-        ("Barber, Adella F", "WEST-MN"),
-        ("Lee, Sam", "NORTH-MN"),
+    individual = [(r["name"], r["team"], r["dq"]) for r in results if not r["event"]["relay"]]
+    assert individual == [
+        ("Barber, Adella F", "WEST-MN", False),
+        ("Smith, Jane", "WEST-MN", True),
+        ("Lee, Sam", "NORTH-MN", False),
     ]
-    assert results[1]["event"] == {"distance": 100, "stroke": Stroke.FL, "course": Course.LCM}
-    assert results[1]["time_seconds"] == pytest.approx(65.1)
-    assert skips["relay_or_time_trial"] == 3
+    assert results[2]["event"] == {"distance": 100, "stroke": Stroke.FL, "course": Course.LCM, "relay": False}
+    assert results[2]["time_seconds"] == pytest.approx(65.1)
+
+    relay = [(r["name"], r["relay_leg"], r["split_seconds"], r["dq"]) for r in results if r["event"]["relay"]]
+    assert relay[:4] == [("Moe, Ann", 1, 27.0, False), ("Smith, Jane", 2, 28.0, False),
+                         ("Doe, Jo", 3, 27.5, False), ("Roe, Kim", 4, 27.5, False)]  # fmt: skip
+    assert [(name, dq) for name, _, _, dq in relay[4:]] == [
+        ("Lee, Ann", True),
+        ("Poe, Liz", True),
+        ("Kay, Mo", True),
+        ("Fay, Jo", True),
+    ]
+    assert skips == {"unsupported_event": 1, "no_show_or_scratch": 1, "unparsed_row": 1}
 
 
 def test_parse_pdf_event_continues_across_columns_and_pages(fake_pdfplumber):
@@ -274,7 +426,7 @@ def test_parse_pdf_event_continues_across_columns_and_pages(fake_pdfplumber):
         ("Saxton, Alistair B", 50),
         ("Dennis, Brody", 100),
     ]
-    assert skips["relay_or_time_trial"] == 0
+    assert skips == imr.new_skip_counts()
 
 
 # --- import_results --------------------------------------------------------
@@ -300,6 +452,35 @@ def run_import(db, results, meet_id, team=None, dry_run=False):
     stats, unmatched = new_stats(), set()
     imr.import_results(db, results, meet_id, team, stats, unmatched, dry_run)
     return stats, unmatched
+
+
+def test_import_results_records_a_dq_with_its_reason(db, swimmer, meet):
+    dq = {**result(time=None, place=None), "dq": True, "dq_reason": "False start"}
+    stats, _ = run_import(db, [dq], meet.id)
+    assert stats["times_imported"] == 1
+    st = db.query(SwimTime).one()
+    assert (st.dq, st.dq_reason, st.time_seconds) == (True, "False start", None)
+    assert st.notes == "Imported from meet results PDF"  # a DQ has no place
+
+
+def test_import_results_records_a_relay_leg(db, swimmer, meet):
+    relay = {
+        **result(time=184.99, distance=200, stroke=Stroke.IM, course=Course.LCM, place="23"),
+        "relay_leg": 4,
+        "split_seconds": 41.94,
+    }
+    relay["event"]["relay"] = True
+    stats, _ = run_import(db, [relay, result()], meet.id)  # the relay plus an individual swim
+
+    assert (stats["events_created"], stats["meet_entries_created"], stats["times_imported"]) == (2, 2, 2)
+    st = db.query(SwimTime).join(MeetEntry).filter(MeetEntry.event.has(relay=True)).one()
+    assert st.meet_entry.event.name == "200 MED-R LCM"
+    assert (st.time_seconds, st.relay_leg, st.split_seconds, st.dq) == (184.99, 4, 41.94, False)
+
+
+def test_import_results_exhibition_note(db, swimmer, meet):
+    run_import(db, [{**result(place=None), "exhibition": True}], meet.id)
+    assert db.query(SwimTime).one().notes == "Imported from meet results PDF, exhibition"
 
 
 def test_import_results_requires_existing_meet(db, capsys):
@@ -382,7 +563,7 @@ def run_main(db, session_factory, fake_pdfplumber, monkeypatch, capsys):
 
 def test_main_imports(run_main, db, swimmer, meet):
     out = run_main("--meet-id", str(meet.id))
-    assert "Parsed 2 individual results" in out
+    assert "Parsed 11 results across all teams (5 DQs, 8 relay swims)" in out
     assert "Swim times imported: 1" in out
     assert db.query(SwimTime).count() == 1
 
@@ -390,7 +571,7 @@ def test_main_imports(run_main, db, swimmer, meet):
 def test_main_team_filter_reports_unmatched(run_main, db, meet):
     crud.create_swimmer(db, schemas.SwimmerCreate(name="Someone Else", birthdate="2012-01-01", gender="M"))
     out = run_main("--meet-id", str(meet.id), "--team", "WEST-MN")
-    assert "1 results found for team 'WEST-MN'" in out
+    assert "6 results found for team 'WEST-MN'" in out  # Barber, Smith's DQ, the 4-swimmer relay
     assert "Barber, Adella F  (would match as: 'Adella Barber')" in out
 
 
@@ -425,9 +606,9 @@ def test_import_endpoint_creates_entry_and_time(upload, db, swimmer, meet):
     r = upload(meet.id)
     assert r.status_code == 200
     body = r.json()
-    assert body["results_parsed"] == 2
+    assert body["results_parsed"] == 11  # incl. the DQ and 8 relay swims (none by our swimmers)
     assert (body["meet_entries_created"], body["times_imported"], body["times_already_existed"]) == (1, 1, 0)
-    assert body["skipped"]["relay_or_time_trial"] == 3
+    assert body["skipped"] == {"unsupported_event": 1, "no_show_or_scratch": 1, "unparsed_row": 1}
 
     st = db.query(SwimTime).one()
     assert st.meet_entry.meet_id == meet.id

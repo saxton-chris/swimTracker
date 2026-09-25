@@ -12,6 +12,21 @@ import schemas
 from main import app
 from models import Base, Course, Stroke
 
+REAL_DB_PATH = database.DB_PATH  # captured before any test swaps it out
+
+
+@pytest.fixture(autouse=True)
+def _never_touch_the_real_db(monkeypatch, tmp_path):
+    """Safety net: anything that reaches for the app's own database (database.engine,
+    SessionLocal, DB_PATH - e.g. the Alembic env's default) gets a throwaway file instead."""
+    path = tmp_path / "guard.db"
+    guard = create_engine(f"sqlite:///{path}")
+    monkeypatch.setattr(database, "DB_PATH", path)
+    monkeypatch.setattr(database, "engine", guard)
+    monkeypatch.setattr(database, "SessionLocal", sessionmaker(bind=guard))
+    yield
+    guard.dispose()
+
 
 def make_test_engine(path=None):
     """Never touches swim_tracker.db.

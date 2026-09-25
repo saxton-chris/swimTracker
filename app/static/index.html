@@ -175,7 +175,7 @@
             <option value="BK">Back (BK)</option>
             <option value="BR">Breast (BR)</option>
             <option value="FL">Fly (FL)</option>
-            <option value="IM">IM</option>
+            <option value="IM" data-relay-label="Medley">IM</option>
           </select>
         </label>
         <label>Course
@@ -186,6 +186,7 @@
           </select>
         </label>
       </div>
+      <label class="check"><input type="checkbox" name="relay"> Relay (Free or Medley; distance is the whole relay, e.g. 200)</label>
       <datalist id="distances">
         <option value="25"><option value="50"><option value="100"><option value="200">
         <option value="400"><option value="500"><option value="800"><option value="1000">
@@ -193,9 +194,23 @@
       </datalist>
       <fieldset>
         <legend>Result</legend>
-        <label>Time <input name="time" placeholder="e.g. 32.45 or 1:02.45" autocomplete="off"></label>
+        <label><span data-relay-text="Team time">Time</span> <input name="time" placeholder="e.g. 32.45 or 1:02.45" autocomplete="off"></label>
+        <div class="row two" id="relay-fields" hidden>
+          <label>His leg
+            <select name="relay_leg">
+              <option value="">—</option>
+              <option value="1">1st</option>
+              <option value="2">2nd</option>
+              <option value="3">3rd</option>
+              <option value="4">4th</option>
+            </select>
+          </label>
+          <label>His split <input name="split" placeholder="e.g. 41.94" autocomplete="off"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="dq"> Disqualified (DQ)</label>
+        <label id="dq-reason-field" hidden>DQ reason <input name="dq_reason" maxlength="200" placeholder="e.g. False start" autocomplete="off"></label>
         <label>Result notes <input name="time_notes" maxlength="300" autocomplete="off"></label>
-        <p class="hint">Leave the time blank if the swim hasn't happened yet. Clearing an existing time removes the result.</p>
+        <p class="hint">Leave the time blank if the swim hasn't happened yet. A DQ can be saved without a time. Clearing the time (and DQ) removes the result.</p>
       </fieldset>
       <p class="form-error" hidden></p>
       <div class="actions">
