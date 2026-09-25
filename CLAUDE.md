@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. There is no linter configured yet.
+A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. Ruff handles linting and formatting (`ruff.toml` at the repo root).
 
 ## Commands
 
@@ -28,6 +28,8 @@ pip install -r requirements-dev.txt
 pytest                                             # full suite + coverage report
 pytest tests/test_api.py::test_event_duplicate     # single test
 pytest -m "not ui"                                 # skip the browser tests
+ruff check .                                       # lint (add --fix for safe auto-fixes)
+ruff format .                                      # format
 ```
 
 Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. Frontend tests (marked `ui`) use Playwright against a live uvicorn thread (`live_server` fixture). They launch the installed Chrome or Edge, falling back to Playwright's Chromium, and skip if no browser is found. They use a temporary SQLite *file* instead of `StaticPool`, because the page sends parallel requests that the server answers on separate threads, and those threads can't safely share a single connection. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
