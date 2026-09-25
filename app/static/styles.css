@@ -45,6 +45,8 @@
 }
 
 * { box-sizing: border-box; }
+/* `hidden` must win over any display rule (e.g. dialog .row's grid). */
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -327,6 +329,27 @@ td.pending { color: var(--muted); }
   text-align: right;
 }
 
+/* A DQ: badge in place of the clock; the time swum (if any) small and muted, since it isn't official. */
+.dq-badge {
+  display: inline-block;
+  min-width: 3.2em;
+  padding: 3px 9px 2px;
+  border-radius: 3px;
+  background: var(--danger);
+  color: var(--surface);
+  font: 700 1.05rem/1.1 var(--font-display);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.dq-time {
+  margin-left: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-decoration: line-through;
+}
+/* Relay leg and split, under the event name. */
+.relay-detail { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
+
 .empty { color: var(--muted); text-align: center; padding: 28px 16px; }
 
 /* --- dialogs -------------------------------------------------------------- */
@@ -347,6 +370,8 @@ dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 500; }
 dialog .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 dialog .row.two { grid-template-columns: 1fr 1fr; }
+dialog label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
+dialog label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--orange); }
 fieldset {
   border: 1px solid var(--border);
   border-left: 3px solid var(--purple);

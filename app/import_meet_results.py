@@ -1,6 +1,6 @@
 """
-Import individual swim results from a Hy-Tek Meet Manager "Results" PDF
-into meet_entries + swim_times for one team.
+Import swim results from a Hy-Tek Meet Manager "Results" PDF into
+meet_entries + swim_times.
 
 Run from the app/ folder (same folder as main.py):
 
@@ -11,16 +11,22 @@ DB Browser) - the PDF has no reliable meet date printed on it (only a
 report-generation timestamp), so the meet_id must be given explicitly
 rather than guessed.
 
-What this script does NOT import, by design:
-  - Relay events (200 FR-R, 200 Medley Relay, etc.) - the data model only
-    supports individual swimmers per meet entry.
-  - "Time Trial" exhibition swims - these are unranked re-swims that share
-    the same event/swimmer as the real race, and the current schema has
-    no way to distinguish a Time Trial result from the real one for the
-    same meet_entry (only one SwimTime per MeetEntry is allowed).
-  - DQs and no-shows (NS) - there's no time to record.
-  - Splits - not part of the current schema.
-All of the above are counted and reported at the end, not silently dropped.
+What gets imported:
+  - Individual results (placed rows).
+  - DQs ("--- Name age TEAM DQ [time]"), with the reason Hy-Tek prints on
+    the next line (e.g. "False start") and the time swum, if shown.
+  - Exhibition swims ("--- Name age TEAM X59.34": swum and timed, not scored),
+    noted as "exhibition".
+  - Relays: each relay swimmer gets a result with the team's time (or DQ), which
+    leg they swam, and their own split for it. Splits are used only when the
+    four leg values add up to the team time (or are cumulative up to it);
+    otherwise the split is left blank rather than guessed.
+
+What is skipped, by design, and counted in the summary:
+  - "Time Trial" swims - unranked re-swims that share the same event/swimmer
+    as the real race, and only one SwimTime per MeetEntry is allowed.
+  - No-shows (NS) and scratches (SCR) - he didn't race.
+  - Splits of individual races - not part of the schema.
 
 Swimmer matching: the PDF prints "Last, First M" (e.g. "Barber, Adella F").
 This is converted to "First Last" (middle initial dropped) and matched
@@ -40,6 +46,7 @@ anything already imported.
 import argparse
 import re
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import pdfplumber
@@ -71,6 +78,11 @@ EVENT_RE = re.compile(
 EVENT_HEADER_LIKE_RE = re.compile(r"^(?:Event\s+\d+\s+)?(?:Girls|Boys|Women|Men|Mixed)\b.*\b(?:Yard|Meter)\b")
 TEAM_RE = re.compile(r"^[A-Z][A-Za-z]{1,5}-[A-Z]{2}$")
 TIME_RE = re.compile(r"^X?(\d{1,2}:)?\d{1,2}\.\d{2}$")
+RELAY_LETTER_RE = re.compile(r"^[A-Z]$")
+# "1) Saxton, Alistair B M10 2) ..." - mixed relays prefix the age with W/M.
+RELAY_SWIMMER_RE = re.compile(r"(\d)\)\s*(.+?)\s+[WM]?(\d{1,2})(?=\s+\d\)|\s*$)")
+# Page furniture that must never be mistaken for a DQ reason.
+NOT_A_REASON_RE = re.compile(r"Site License|HY-TEK|Meet Manager|^Results\b", re.IGNORECASE)
 
 STROKE_MAP = {
     "Freestyle": Stroke.FR,
@@ -80,11 +92,16 @@ STROKE_MAP = {
     "Individual Medley": Stroke.IM,
     "IM": Stroke.IM,
 }
+RELAY_STROKE_MAP = {"Freestyle": Stroke.FR, "Medley": Stroke.IM}  # a medley relay is stored as IM + relay
 COURSE_MAP = {
     ("LC", "Meter"): Course.LCM,
     ("SC", "Meter"): Course.SCM,
     ("SC", "Yard"): Course.SCY,
 }
+
+
+def new_skip_counts():
+    return {"unsupported_event": 0, "no_show_or_scratch": 0, "unparsed_row": 0}
 
 
 def cluster_rows(words, tol=2.5):
@@ -101,8 +118,8 @@ def cluster_rows(words, tol=2.5):
 
 
 def parse_time(raw):
-    """'1:23.49' / '43.23' (optionally 'X'-prefixed) -> seconds. None if unrecognized."""
-    s = raw.lstrip("X")
+    """'1:23.49' / '43.23' (optionally 'X'-prefixed or in parentheses) -> seconds. None if unrecognized."""
+    s = raw.strip("()").lstrip("X")
     m = re.match(r"^(\d{1,2}):(\d{2}\.\d{2})$", s)
     if m:
         return int(m.group(1)) * 60 + float(m.group(2))
@@ -110,6 +127,11 @@ def parse_time(raw):
     if m:
         return float(m.group(1))
     return None
+
+
+def _last_time(words):
+    """The last time-shaped token in `words`, as seconds (None if there isn't one)."""
+    return next((parse_time(w["text"]) for w in reversed(words) if TIME_RE.match(w["text"])), None)
 
 
 def parse_result_row(words):
@@ -130,34 +152,104 @@ def parse_result_row(words):
     if not re.match(r"^\d{1,2}$", age_word):
         return None
 
-    name = " ".join(w["text"] for w in words[1 : team_idx - 1])
-    team = words[team_idx]["text"]
-
     # Hy-Tek rows can be "... Team SeedTime FinalsTime Points"; the result is
     # the LAST time on the row (a seed, when present, comes first).
-    time_idx = next((i for i in range(len(words) - 1, team_idx, -1) if TIME_RE.match(words[i]["text"])), None)
-    if time_idx is None:
+    time_seconds = _last_time(words[team_idx + 1 :])
+    if time_seconds is None:
         return None
 
     return {
         "place": words[0]["text"],
-        "name": name,
+        "name": " ".join(w["text"] for w in words[1 : team_idx - 1]),
         "age": int(age_word),
-        "team": team,
-        "time_seconds": parse_time(words[time_idx]["text"]),
+        "team": words[team_idx]["text"],
+        "time_seconds": time_seconds,
     }
 
 
-def process_column(rows, skip_counts, state=None):
-    """rows: one column's row dicts, in top order. Returns parsed result dicts.
+def parse_unplaced_row(words):
+    """An individual '---' row: '--- Name age TEAM DQ [time]', '--- Name age TEAM X59.34'
+    (exhibition), or '... NS' / '... SCR'. Returns the fields plus 'mark' (DQ/NS/SCR or None),
+    or None if the row doesn't have that shape."""
+    words = sorted(words, key=lambda w: w["x0"])
+    team_idx = next((i for i, w in enumerate(words) if TEAM_RE.match(w["text"])), None)
+    if not words or words[0]["text"] != "---" or team_idx is None or team_idx < 3:
+        return None
+    age_word = words[team_idx - 1]["text"]
+    if not re.match(r"^\d{1,2}$", age_word):
+        return None
+    after = words[team_idx + 1 :]
+    mark = next((w["text"] for w in after if w["text"] in ("DQ", "NS", "SCR", "DNF", "DFS")), None)
+    return {
+        "place": None,
+        "name": " ".join(w["text"] for w in words[1 : team_idx - 1]),
+        "age": int(age_word),
+        "team": words[team_idx]["text"],
+        "time_seconds": _last_time(after),
+        "mark": mark,
+        "exhibition": mark is None and any(w["text"].startswith("X") and TIME_RE.match(w["text"]) for w in after),
+    }
 
-    `state` carries the current event between calls: Hy-Tek doesn't repeat an
-    event's header when its results flow from the bottom of the left column
-    into the right column, or onto the next page, so parse_pdf passes the same
-    dict for every column in reading order. Without it those rows would be
-    dropped (and miscounted as relay/time-trial skips)."""
+
+def parse_relay_team_row(words):
+    """'1 WEST-MN A 2:39.11 40' or '--- NOR-MN A DQ 4:28.60' -> team fields, else None."""
+    words = sorted(words, key=lambda w: w["x0"])
+    if len(words) < 3 or not TEAM_RE.match(words[1]["text"]) or not RELAY_LETTER_RE.match(words[2]["text"]):
+        return None
+    first = words[0]["text"]
+    if not (first.isdigit() or first == "---"):
+        return None
+    texts = {w["text"] for w in words[3:]}
+    return {
+        "place": first if first.isdigit() else None,
+        "team": words[1]["text"],
+        "dq": "DQ" in texts,
+        "no_show": bool(texts & {"NS", "SCR"}),
+        "time_seconds": _last_time(words[3:]),
+        "dq_reason": None,
+        "swimmers": [],  # (leg, "Last, First M", age)
+        "splits": [],  # seconds, as printed
+    }
+
+
+def relay_leg_splits(splits, team_time):
+    """Each leg's own split, or None when the printed splits can't be matched to 4 legs.
+    Hy-Tek prints either per-leg splits (they add up to the team time) or cumulative
+    ones (the last equals the team time)."""
+    if team_time is None or len(splits) != 4:
+        return None
+    if abs(sum(splits) - team_time) < 0.05:
+        return splits
+    if abs(splits[-1] - team_time) < 0.05 and splits == sorted(splits):
+        return [splits[0]] + [round(b - a, 2) for a, b in pairwise(splits)]
+    return None
+
+
+def _is_reason(text):
+    """Could this row be the DQ reason Hy-Tek prints under a DQ?"""
+    return bool(
+        text
+        and not text.startswith("---")
+        and not re.match(r"^\d+\)?\s", text)  # a placed row or a relay swimmer list
+        and not all(parse_time(t) is not None for t in text.split())  # a splits line
+        and not EVENT_HEADER_LIKE_RE.match(text.strip("()"))
+        and not NOT_A_REASON_RE.search(text)
+    )
+
+
+def process_column(rows, skip_counts, state=None):
+    """rows: one column's row dicts, in top order. Returns parsed individual
+    result dicts; relay teams are collected in state["relay_teams"].
+
+    `state` carries the current event (and relay team) between calls: Hy-Tek
+    doesn't repeat an event's header when its results flow from the bottom of
+    the left column into the right column, or onto the next page, so parse_pdf
+    passes the same dict for every column in reading order."""
     if state is None:
         state = {"event": None}
+    state.setdefault("relay_teams", [])
+    state.setdefault("relay_team", None)
+    last_dq = None  # a DQ's reason is on the very next row of the same column
     current_event = state["event"]
     results = []
 
@@ -167,36 +259,83 @@ def process_column(rows, skip_counts, state=None):
         # Page-top continuation headers are parenthesized: "(Boys 9-10 50 LC Meter Freestyle)"
         header_text = text[1:-1] if text.startswith("(") and text.endswith(")") else text
 
+        pending_dq, last_dq = last_dq, None
+        if pending_dq is not None and _is_reason(text):
+            pending_dq["dq_reason"] = text
+            continue
+
         m = EVENT_RE.match(header_text)
         # EVENT_RE accepts any LC/SC + Meter/Yard pairing, but "LC Yard" isn't a
         # real course - let it fall through to the unrecognized-header warning.
         if m and (m.group("course"), m.group("unit")) in COURSE_MAP:
-            if m.group("relay") or m.group("timetrial") or m.group("stroke") not in STROKE_MAP:
+            relay = bool(m.group("relay"))
+            strokes = RELAY_STROKE_MAP if relay else STROKE_MAP
+            if m.group("timetrial") or m.group("stroke") not in strokes:
                 current_event = None  # unsupported block - its rows get skipped below
             else:
                 current_event = {
                     "distance": int(m.group("distance")),
-                    "stroke": STROKE_MAP[m.group("stroke")],
+                    "stroke": strokes[m.group("stroke")],
                     "course": COURSE_MAP[(m.group("course"), m.group("unit"))],
+                    "relay": relay,
                 }
+            state["relay_team"] = None
             continue
 
         if EVENT_HEADER_LIKE_RE.match(header_text):
             # A header we can't parse - stop attributing rows to the previous event.
             print(f"  WARNING: unrecognized event header, skipping its rows: {text!r}")
             current_event = None
+            state["relay_team"] = None
             continue
 
         if text.startswith("Name") or text.startswith("Team"):
             continue  # column sub-header row
 
+        numbered_or_unplaced = bool(words) and (re.match(r"^\d+$", words[0]["text"]) or words[0]["text"] == "---")
         if current_event is None:
-            if words and (re.match(r"^\d+$", words[0]["text"]) or words[0]["text"] == "---"):
-                skip_counts["relay_or_time_trial"] += 1
+            if numbered_or_unplaced:
+                skip_counts["unsupported_event"] += 1  # Time Trial or unrecognized event
+            continue
+
+        if current_event["relay"]:
+            team = parse_relay_team_row(words)
+            if team is not None:
+                if team["no_show"]:
+                    skip_counts["no_show_or_scratch"] += 1
+                    state["relay_team"] = None
+                    continue
+                team["event"] = current_event
+                state["relay_teams"].append(team)
+                state["relay_team"] = team
+                if team["dq"]:
+                    last_dq = team
+                continue
+            relay_team = state["relay_team"]
+            if relay_team is None:
+                continue
+            swimmers = RELAY_SWIMMER_RE.findall(text)
+            if swimmers and re.match(r"^\d\)", text):
+                relay_team["swimmers"] += [(int(leg), name, int(age)) for leg, name, age in swimmers]
+            elif text and all(parse_time(t) is not None for t in text.split()):
+                relay_team["splits"] += [parse_time(t) for t in text.split()]
             continue
 
         if words and words[0]["text"] == "---":
-            skip_counts["dq_or_no_show"] += 1
+            parsed = parse_unplaced_row(words)
+            if (
+                parsed is None
+                or parsed["mark"] in ("NS", "SCR", "DNF", "DFS")
+                or (parsed["mark"] is None and not parsed["exhibition"])
+            ):
+                skip_counts["no_show_or_scratch"] += 1
+                continue
+            parsed["dq"] = parsed.pop("mark") == "DQ"
+            parsed["dq_reason"] = None
+            parsed["event"] = current_event
+            results.append(parsed)
+            if parsed["dq"]:
+                last_dq = parsed
             continue
 
         parsed = parse_result_row(words)
@@ -205,16 +344,37 @@ def process_column(rows, skip_counts, state=None):
                 skip_counts["unparsed_row"] += 1  # looked numbered but didn't fit the expected shape
             continue  # otherwise: a splits line or standard-tag line - not an error
 
-        parsed["event"] = current_event
+        parsed.update(event=current_event, dq=False, dq_reason=None, exhibition=False)
         results.append(parsed)
 
     state["event"] = current_event
     return results
 
 
+def relay_results(team):
+    """One result per swimmer on a relay team: the team's time/DQ plus their leg and split."""
+    legs = relay_leg_splits(team["splits"], team["time_seconds"])
+    return [
+        {
+            "place": team["place"],
+            "name": name,
+            "age": age,
+            "team": team["team"],
+            "time_seconds": team["time_seconds"],
+            "event": team["event"],
+            "dq": team["dq"],
+            "dq_reason": team["dq_reason"],
+            "exhibition": False,
+            "relay_leg": leg,
+            "split_seconds": legs[leg - 1] if legs and 1 <= leg <= 4 else None,
+        }
+        for leg, name, age in team["swimmers"]
+    ]
+
+
 def parse_pdf(path):
     all_results = []
-    skip_counts = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
+    skip_counts = new_skip_counts()
 
     state = {"event": None}  # shared so an event continues across columns and pages
 
@@ -226,6 +386,8 @@ def parse_pdf(path):
             for col_words in (left, right):
                 all_results.extend(process_column(cluster_rows(col_words), skip_counts, state))
 
+    for team in state.get("relay_teams", []):
+        all_results.extend(relay_results(team))
     return all_results, skip_counts
 
 
@@ -253,10 +415,10 @@ def build_swimmer_index(db):
 # ---------------------------------------------------------------------------
 
 
-def get_or_create_event(db, distance, stroke, course, stats):
-    event = crud.get_event(db, distance, stroke, course)
+def get_or_create_event(db, distance, stroke, course, relay, stats):
+    event = crud.get_event(db, distance, stroke, course, relay)
     if event is None:
-        event = crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course))
+        event = crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course, relay=relay))
         stats["events_created"] += 1
     return event
 
@@ -269,6 +431,16 @@ def new_stats():
         "times_already_existed": 0,
         "would_import": 0,
     }
+
+
+def result_notes(r):
+    """'Imported from meet results PDF, place 25' (or ', exhibition')."""
+    notes = "Imported from meet results PDF"
+    if r.get("exhibition"):
+        return f"{notes}, exhibition"
+    if r.get("place"):
+        return f"{notes}, place {r['place']}"
+    return notes
 
 
 def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dry_run):
@@ -306,11 +478,12 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
                 unmatched_names.add(r["name"])
             continue
 
-        distance, stroke, course = r["event"]["distance"], r["event"]["stroke"], r["event"]["course"]
+        ev = r["event"]
+        distance, stroke, course, relay = ev["distance"], ev["stroke"], ev["course"], ev.get("relay", False)
 
         if dry_run:
             # Read-only: never create events here, just check what's already imported.
-            event = crud.get_event(db, distance, stroke, course)
+            event = crud.get_event(db, distance, stroke, course, relay)
             meet_entry = event and crud.get_meet_entry(db, meet_id, swimmer.id, event.id)
             if meet_entry and crud.get_swim_time_by_meet_entry(db, meet_entry.id):
                 stats["times_already_existed"] += 1
@@ -318,7 +491,7 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
                 stats["would_import"] += 1
             continue
 
-        event = get_or_create_event(db, distance, stroke, course, stats)
+        event = get_or_create_event(db, distance, stroke, course, relay, stats)
 
         meet_entry = crud.get_meet_entry(db, meet_id, swimmer.id, event.id)
         if meet_entry is None:
@@ -337,7 +510,11 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
             schemas.SwimTimeCreate(
                 meet_entry_id=meet_entry.id,
                 time_seconds=r["time_seconds"],
-                notes=f"Imported from meet results PDF, place {r['place']}",
+                notes=result_notes(r),
+                dq=r.get("dq", False),
+                dq_reason=r.get("dq_reason"),
+                relay_leg=r.get("relay_leg"),
+                split_seconds=r.get("split_seconds"),
             ),
         )
         stats["times_imported"] += 1
@@ -366,10 +543,12 @@ def main():
 
     print(f"Parsing {args.pdf_path} ...")
     results, skip_counts = parse_pdf(args.pdf_path)
-    print(f"Parsed {len(results)} individual results across all teams.")
+    dqs = sum(1 for r in results if r.get("dq"))
+    relays = sum(1 for r in results if r["event"].get("relay"))
+    print(f"Parsed {len(results)} results across all teams ({dqs} DQs, {relays} relay swims).")
     print(
-        f"Skipped: {skip_counts['relay_or_time_trial']} relay/Time-Trial rows, "
-        f"{skip_counts['dq_or_no_show']} DQ/no-show rows, "
+        f"Skipped: {skip_counts['unsupported_event']} rows in Time Trial/unrecognized events, "
+        f"{skip_counts['no_show_or_scratch']} no-show/scratch rows, "
         f"{skip_counts['unparsed_row']} unparsed rows."
     )
 

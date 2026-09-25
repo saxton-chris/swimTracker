@@ -33,8 +33,12 @@ export function setupDialog(dialogId, onSave) {
       error.hidden = true;
       form.querySelector("h2").textContent = title;
       for (const [name, value] of Object.entries(values)) {
-        if (form.elements[name]) form.elements[name].value = value ?? "";
+        const field = form.elements[name];
+        if (!field) continue;
+        if (field.type === "checkbox") field.checked = Boolean(value);
+        else field.value = value ?? "";
       }
+      form.dispatchEvent(new Event("change")); // let the form sync any fields that depend on these values
       dialog.showModal();
     },
   };

@@ -288,10 +288,98 @@ def test_swim_time_patch_missing(client):
     assert client.patch("/swim_times/999", json={"time_seconds": 30.0}).status_code == 404
 
 
-@pytest.mark.parametrize("payload", [{"time_seconds": 0}, {"time_seconds": -1}, {"time_seconds": None}])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"time_seconds": 0},
+        {"time_seconds": -1},
+        {"time_seconds": None},  # a result needs a time unless it's a DQ
+        {"dq": None},
+        {"dq_reason": "False start"},  # a reason without a DQ
+        {"relay_leg": 2},  # relay fields on an individual event
+        {"split_seconds": 15.0},
+    ],
+)
 def test_swim_time_patch_validation(client, meet_entry, payload):
     st = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "time_seconds": 30.0}).json()
     assert client.patch(f"/swim_times/{st['id']}", json=payload).status_code == 422
+
+
+# --- DQs and relays ----------------------------------------------------------
+
+
+def test_dq_without_a_time(client, meet_entry):
+    r = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "dq": True, "dq_reason": " False start "})
+    assert r.status_code == 200
+    st = r.json()
+    assert (st["dq"], st["dq_reason"], st["time_seconds"]) == (True, "False start", None)
+
+
+def test_dq_can_keep_the_time_swum(client, meet_entry):
+    r = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "dq": True, "time_seconds": 42.96})
+    assert r.json()["time_seconds"] == 42.96
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({}, "time_seconds is required unless the swim is a DQ"),
+        ({"time_seconds": 30.0, "dq_reason": "Other"}, "dq_reason is only allowed on a DQ"),
+        ({"dq": True, "relay_leg": 5}, "less than or equal to 4"),
+    ],
+)
+def test_result_validation_on_create(client, meet_entry, payload, message):
+    r = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, **payload})
+    assert r.status_code == 422
+    assert message in r.text
+
+
+def test_relay_fields_only_on_relay_events(client, meet_entry):
+    r = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "time_seconds": 30.0, "relay_leg": 1})
+    assert r.status_code == 422
+    assert "only for relays, not 50 FR SCY" in r.json()["detail"]
+
+
+@pytest.fixture
+def relay_entry(client, swimmer, meet):
+    event = client.post("/events/", json={"distance": 200, "stroke": "IM", "course": "LCM", "relay": True}).json()
+    body = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": event["id"]}
+    return client.post("/meet_entries/", json=body).json()
+
+
+def test_relay_result_with_leg_and_split(client, relay_entry):
+    body = {"meet_entry_id": relay_entry["id"], "time_seconds": 184.99, "relay_leg": 4, "split_seconds": 41.94}
+    st = client.post("/swim_times/", json=body).json()
+    assert (st["time_seconds"], st["relay_leg"], st["split_seconds"]) == (184.99, 4, 41.94)
+
+
+def test_relay_and_individual_events_are_distinct(client, swim_event):
+    r = client.post("/events/", json={"distance": 50, "stroke": "FR", "course": "SCY", "relay": True})
+    assert r.status_code == 200
+    assert r.json()["name"] == "50 FR-R SCY"
+    names = sorted(e["name"] for e in client.get("/events/").json())
+    assert names == ["50 FR SCY", "50 FR-R SCY"]
+    dup = client.post("/events/", json={"distance": 50, "stroke": "FR", "course": "SCY", "relay": True})
+    assert dup.status_code == 400
+    assert "50 FR-R SCY" in dup.json()["detail"]
+
+
+def test_medley_relay_name(client):
+    r = client.post("/events/", json={"distance": 200, "stroke": "IM", "course": "SCY", "relay": True})
+    assert r.json()["name"] == "200 MED-R SCY"
+
+
+def test_patch_to_dq_then_back(client, meet_entry):
+    st = client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "time_seconds": 30.0}).json()
+    url = f"/swim_times/{st['id']}"
+
+    dq = client.patch(url, json={"dq": True, "dq_reason": "Scissors kick", "time_seconds": None}).json()
+    assert (dq["dq"], dq["dq_reason"], dq["time_seconds"]) == (True, "Scissors kick", None)
+
+    # Un-DQ'ing needs a time again, and drops the reason automatically.
+    assert client.patch(url, json={"dq": False}).status_code == 422
+    back = client.patch(url, json={"dq": False, "time_seconds": 31.5}).json()
+    assert (back["dq"], back["dq_reason"], back["time_seconds"]) == (False, None, 31.5)
 
 
 # --- time standards --------------------------------------------------------

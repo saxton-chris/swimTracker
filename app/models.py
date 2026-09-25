@@ -1,7 +1,7 @@
 import enum
 from datetime import date as date_type
 
-from sqlalchemy import Date, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, Float, ForeignKey, String, UniqueConstraint, false
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -59,18 +59,22 @@ class Event(Base):
     __tablename__ = "events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    distance: Mapped[int] = mapped_column()  # e.g. 50, 100, 200
-    stroke: Mapped[Stroke] = mapped_column(SAEnum(Stroke))
+    distance: Mapped[int] = mapped_column()  # e.g. 50, 100, 200 (a relay's total distance)
+    stroke: Mapped[Stroke] = mapped_column(SAEnum(Stroke))  # a medley relay is stroke IM + relay
     course: Mapped[Course] = mapped_column(SAEnum(Course))
+    relay: Mapped[bool] = mapped_column(default=False, server_default=false())
 
     meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="event")
     time_standards: Mapped[list["TimeStandard"]] = relationship(back_populates="event")
 
-    __table_args__ = (UniqueConstraint("distance", "stroke", "course", name="uix_event"),)
+    __table_args__ = (UniqueConstraint("distance", "stroke", "course", "relay", name="uix_event"),)
 
     @property
     def name(self) -> str:
-        """Display name, e.g. '50 FR SCY'. Not a stored column."""
+        """Display name, e.g. '50 FR SCY', or '200 FR-R LCM' / '200 MED-R LCM' for relays. Not a stored column."""
+        if self.relay:
+            stroke = "MED" if self.stroke == Stroke.IM else self.stroke.value
+            return f"{self.distance} {stroke}-R {self.course.value}"
         return f"{self.distance} {self.stroke.value} {self.course.value}"
 
 
@@ -105,16 +109,30 @@ class SwimTime(Base):
     Stored as a float in seconds (e.g. 32.45) rather than a formatted
     string like "1:02.45" - makes comparisons/math against time
     standards trivial. Format for display in the app layer instead.
+
+    A disqualified swim has dq=True, an optional reason, and the time swum
+    if the results printed one (it's never an official time). For a relay,
+    time_seconds is the team's time; relay_leg and split_seconds are this
+    swimmer's leg (1-4) and their own split for it.
     """
 
     __tablename__ = "swim_times"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     meet_entry_id: Mapped[int] = mapped_column(ForeignKey("meet_entries.id"), unique=True)
-    time_seconds: Mapped[float] = mapped_column(Float)
+    time_seconds: Mapped[float | None] = mapped_column(Float)
     notes: Mapped[str | None] = mapped_column(String(300), default=None)
+    dq: Mapped[bool] = mapped_column(default=False, server_default=false())
+    dq_reason: Mapped[str | None] = mapped_column(String(200), default=None)
+    relay_leg: Mapped[int | None] = mapped_column(default=None)
+    split_seconds: Mapped[float | None] = mapped_column(Float, default=None)
 
     meet_entry: Mapped["MeetEntry"] = relationship(back_populates="swim_time")
+
+    __table_args__ = (
+        CheckConstraint("dq OR time_seconds IS NOT NULL", name="ck_swim_time_needs_time_unless_dq"),
+        CheckConstraint("relay_leg BETWEEN 1 AND 4", name="ck_swim_time_relay_leg"),
+    )
 
 
 class TimeStandard(Base):

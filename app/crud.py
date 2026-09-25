@@ -91,9 +91,11 @@ def get_events(db: Session):
     return db.scalars(select(Event)).all()
 
 
-def get_event(db: Session, distance: int, stroke, course):
+def get_event(db: Session, distance: int, stroke, course, relay: bool = False):
     return db.scalars(
-        select(Event).where(Event.distance == distance, Event.stroke == stroke, Event.course == course)
+        select(Event).where(
+            Event.distance == distance, Event.stroke == stroke, Event.course == course, Event.relay == relay
+        )
     ).first()
 
 
