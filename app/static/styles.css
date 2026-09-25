@@ -219,6 +219,7 @@ dialog h2 { margin: 0 0 14px; font: 700 1.5rem/1.1 var(--font-display); }
 dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 500; }
 dialog .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+dialog .row.two { grid-template-columns: 1fr 1fr; }
 fieldset {
   border: 1px solid var(--border);
   border-left: 3px solid var(--purple);

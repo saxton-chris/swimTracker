@@ -15,10 +15,18 @@ def list_meets(db: Session = Depends(get_db)):
 
 @router.patch("/{meet_id}", response_model=schemas.MeetOut)
 def update_meet(meet_id: int, update: schemas.MeetUpdate, db: Session = Depends(get_db)):
-    updated = crud.update_meet(db, meet_id, update)
-    if updated is None:
+    existing = crud.get_meet_by_id(db, meet_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail=f"Meet {meet_id} not found")
-    return updated
+
+    # Check the date range using post-update values (changed fields override stored ones)
+    changes = update.model_dump(exclude_unset=True)
+    try:
+        schemas.check_meet_dates(changes.get("date", existing.date), changes.get("end_date", existing.end_date))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return crud.update_meet(db, meet_id, update)
 
 @router.delete("/{meet_id}", status_code=204)
 def delete_meet(meet_id: int, db: Session = Depends(get_db)):

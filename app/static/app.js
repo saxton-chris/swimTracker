@@ -82,10 +82,23 @@ function parseTime(text) {
   return Math.round(total * 100) / 100;
 }
 
-/** ISO "2026-01-10" -> locale date, parsed as a local date (not UTC). */
-function formatDate(iso) {
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" });
+
+/** ISO "2026-01-10" -> Date at local midnight (new Date(iso) would be UTC midnight, i.e. the day before in the Americas). */
+function localDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  return new Date(y, m - 1, d);
+}
+
+/** ISO "2026-01-10" -> "Jan 10, 2026" */
+function formatDate(iso) {
+  return DATE_FORMAT.format(localDate(iso));
+}
+
+/** A meet's dates: "Jan 10, 2026" for one day, "Jan 9 – 11, 2026" for a multi-day meet. */
+function formatMeetDates(meet) {
+  if (!meet.end_date || meet.end_date === meet.date) return formatDate(meet.date);
+  return DATE_FORMAT.formatRange(localDate(meet.date), localDate(meet.end_date));
 }
 
 function ageOn(birthIso, onDate = new Date()) {
@@ -191,7 +204,7 @@ function renderMeets() {
   body.replaceChildren(
     ...state.meets.map((m) =>
       el("tr", {},
-        el("td", { textContent: formatDate(m.date) }),
+        el("td", { textContent: formatMeetDates(m) }),
         el("td", { class: "c-name" }, nameButton(m.name, () => filterEntries({ meet: m.id }))),
         el("td", { class: "c-location", textContent: m.location || "" }),
         el("td", { class: "num", textContent: counts.get(m.id) || 0 }),
@@ -240,7 +253,7 @@ function renderEntries() {
     ...rows.map(({ entry, meet, swimmer, event, time }) =>
       el("tr", {},
         el("td", { class: "c-meet", textContent: meet.name }),
-        el("td", { class: "c-date", textContent: formatDate(meet.date) }),
+        el("td", { class: "c-date", textContent: formatMeetDates(meet) }),
         el("td", { class: "c-swimmer", textContent: swimmer.name }),
         el("td", { class: "c-event", textContent: event.name }),
         time
@@ -346,7 +359,9 @@ document.getElementById("add-swimmer").addEventListener("click", () => openSwimm
 
 let editingMeet = null;
 const meetDialog = setupDialog("meet-dialog", async (f) => {
-  const body = { name: f.name.trim(), date: f.date, location: blankToNull(f.location) };
+  const endDate = blankToNull(f.end_date);
+  if (endDate && endDate < f.date) throw new Error("End date must be on or after the start date.");
+  const body = { name: f.name.trim(), date: f.date, end_date: endDate, location: blankToNull(f.location) };
   if (editingMeet) await api("PATCH", `/meets/${editingMeet.id}`, body);
   else await api("POST", "/meets/", body);
   toast(editingMeet ? "Meet updated" : "Meet added");
