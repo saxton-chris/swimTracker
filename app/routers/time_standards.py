@@ -31,6 +31,12 @@ def add_time_standard(time_standard: schemas.TimeStandardCreate, db: Session = D
     return crud.create_time_standard(db, time_standard)
 
 
+@router.get("/sets", response_model=list[schemas.TimeStandardSetOut])
+def list_time_standard_sets(db: Session = Depends(get_db)):
+    """The organization/season combinations that have standards loaded."""
+    return crud.get_time_standard_sets(db)
+
+
 @router.get("/", response_model=list[schemas.TimeStandardOut])
 def list_time_standards(
     event_id: int | None = None,

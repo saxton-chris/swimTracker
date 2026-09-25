@@ -151,3 +151,12 @@ class TimeStandardOut(TimeStandardCreate):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TimeStandardSetOut(BaseModel):
+    """One published set of standards: an organization's tiers for one season."""
+
+    organization: str
+    season: str
+
+    model_config = ConfigDict(from_attributes=True)
