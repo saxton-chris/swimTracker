@@ -146,6 +146,20 @@ def test_load_failure_shows_error_toast(page):
 
 
 @pytest.mark.parametrize("view", ["entries", "swimmers", "meets"])
+def test_table_cells_fill_their_rows(page, db, seeded, view):
+    """Every cell in a row must end at the same height, or the row divider
+    lines break (regression: the dialog's `.actions` rule once turned the
+    table's td.actions into a flex box that didn't stretch to the row)."""
+    crud.update_swim_time(db, 1, schemas.SwimTimeUpdate(notes="Imported from meet results PDF, place 25"))
+    crud.update_swimmer(db, seeded.adella_id, schemas.SwimmerUpdate(notes="Long enough to wrap onto a second line in the notes column"))
+    page.set_viewport_size({"width": 1100, "height": 800})
+    open_app(page, view)
+    bottoms = page.evaluate(f"""() => [...document.querySelectorAll('#{view}-body tr')].map(tr =>
+        [...tr.children].map(td => Math.round(td.getBoundingClientRect().bottom)))""")
+    assert bottoms and all(len(set(row)) == 1 for row in bottoms), bottoms
+
+
+@pytest.mark.parametrize("view", ["entries", "swimmers", "meets"])
 def test_no_horizontal_page_scroll_on_phone(page, seeded, view):
     page.set_viewport_size({"width": 375, "height": 800})
     open_app(page, view)

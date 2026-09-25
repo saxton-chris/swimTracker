@@ -232,7 +232,7 @@ fieldset {
 legend { font: 600 1rem/1 var(--font-display); color: var(--text); padding: 0 6px; }
 .hint { margin: 0; font-size: 0.82rem; color: var(--muted); }
 .form-error { margin: 0; color: var(--danger); font-size: 0.9rem; font-weight: 500; }
-.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 /* --- toast ---------------------------------------------------------------- */
 
