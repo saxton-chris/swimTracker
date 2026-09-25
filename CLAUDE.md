@@ -53,6 +53,7 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 
 `app/static/` (`index.html`, `app.js`, `styles.css`) is plain HTML/JS with no build step or dependencies. `main.py` serves `index.html` at `/` and mounts the directory at `/static`. The page calls the JSON API with `fetch`, loads every list on startup, and reloads them all after each change (the dataset is small). It has three tabs: Entries & Results, Swimmers, and Meets.
 
+- Meets are listed oldest first by start date everywhere: the Meets tab, the dropdowns, and the Entries table. The Entries table groups rows under one `tr.meet-heading` per meet (name, dates, location) and has no Meet/Date columns. New-entry and import dialogs default to the newest meet when the table isn't filtered.
 - Meet entries and their result are edited in one dialog. The event is chosen by distance/stroke/course and created through `POST /events/` if it doesn't exist. The time is entered as `ss.xx` or `m:ss.xx` and sent as float seconds. Clearing the time deletes the `SwimTime`.
 - Deletes use `confirm()` and say how many entries and results the cascade will remove.
 - "Import results" on the Entries tab uploads a Hy-Tek results PDF for a chosen meet to `POST /meets/{id}/import-results`. The PDF is the raw request body (`Content-Type: application/pdf`, no multipart, so no `python-multipart` dependency). The endpoint runs the same `parse_pdf` + `import_results` as the CLI script, with no team filter, and returns a count summary that the page shows as a toast.

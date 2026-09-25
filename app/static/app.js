@@ -61,7 +61,8 @@ async function loadAll() {
   ]);
   Object.assign(state, { swimmers, meets, events, entries, times });
   state.swimmers.sort((a, b) => a.name.localeCompare(b.name));
-  state.meets.sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name));
+  // Oldest first by start date, everywhere meets are listed.
+  state.meets.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +250,7 @@ function renderEntries() {
       time: timeByEntry.get(e.id),
     }))
     .sort((a, b) =>
-      b.meet.date.localeCompare(a.meet.date) ||
+      a.meet.date.localeCompare(b.meet.date) ||
       a.meet.name.localeCompare(b.meet.name) ||
       a.swimmer.name.localeCompare(b.swimmer.name) ||
       a.event.course.localeCompare(b.event.course) ||
@@ -257,27 +258,49 @@ function renderEntries() {
       a.event.distance - b.event.distance
     );
 
-  document.getElementById("entries-body").replaceChildren(
-    ...rows.map(({ entry, meet, swimmer, event, time }) =>
-      el("tr", {},
-        el("td", { class: "c-meet", textContent: meet.name }),
-        el("td", { class: "c-date", textContent: formatMeetDates(meet) }),
-        el("td", { class: "c-swimmer", textContent: swimmer.name }),
-        el("td", { class: "c-event", textContent: event.name }),
-        time
-          ? el("td", { class: "num c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }))
-          : el("td", { class: "num c-time pending", textContent: "—" }),
-        el("td", { class: "notes c-notes", textContent: (time && time.notes) || "" }),
-        el("td", { class: "actions" },
-          actionButton(time ? "Edit" : "Add time", () => openEntryDialog(entry)),
-          actionButton("Delete", () => deleteEntry(entry, swimmer, event, meet), true)),
-      )
-    )
-  );
+  // Rows are sorted by meet, so each meet's entries sit under one heading row
+  // (name and dates shown once) instead of repeating them in every row.
+  const tableRows = [];
+  let currentMeet = null;
+  for (const r of rows) {
+    if (r.meet !== currentMeet) {
+      currentMeet = r.meet;
+      tableRows.push(meetHeading(r.meet));
+    }
+    tableRows.push(entryRow(r));
+  }
+  document.getElementById("entries-body").replaceChildren(...tableRows);
 
   const empty = document.getElementById("entries-empty");
   empty.hidden = rows.length > 0;
   empty.textContent = state.entries.length ? "No entries match these filters." : "No meet entries yet.";
+}
+
+const ENTRY_COLUMNS = 5;
+
+function meetHeading(meet) {
+  return el("tr", { class: "meet-heading" },
+    // The " " text nodes keep the parts separate for screen readers and copy/paste; CSS sets the visual gap.
+    el("th", { colSpan: ENTRY_COLUMNS, scope: "colgroup" },
+      el("span", { class: "meet-name", textContent: meet.name }),
+      " ",
+      el("span", { class: "meet-dates", textContent: formatMeetDates(meet) }),
+      meet.location ? " " : null,
+      meet.location ? el("span", { class: "meet-location", textContent: meet.location }) : null));
+}
+
+function entryRow({ entry, meet, swimmer, event, time }) {
+  return el("tr", { class: "entry" },
+    el("td", { class: "c-swimmer", textContent: swimmer.name }),
+    el("td", { class: "c-event", textContent: event.name }),
+    time
+      ? el("td", { class: "num c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }))
+      : el("td", { class: "num c-time pending", textContent: "—" }),
+    el("td", { class: "notes c-notes", textContent: (time && time.notes) || "" }),
+    el("td", { class: "actions" },
+      actionButton(time ? "Edit" : "Add time", () => openEntryDialog(entry)),
+      actionButton("Delete", () => deleteEntry(entry, swimmer, event, meet), true)),
+  );
 }
 
 function filterEntries({ meet = "", swimmer = "" }) {
@@ -404,6 +427,9 @@ function cascadeWarning(entries) {
 
 let editingEntry = null;
 
+/** Default meet for a new entry or import: the most recent one (meets are listed oldest first). */
+const newestMeet = () => state.meets[state.meets.length - 1];
+
 /** Find the event for distance/stroke/course, creating it if it doesn't exist yet. */
 async function resolveEventId(distance, stroke, course) {
   const found = state.events.find((e) => e.distance === distance && e.stroke === stroke && e.course === course);
@@ -470,7 +496,7 @@ function openEntryDialog(entry = null) {
   } else {
     // Default to whatever the Entries tab is filtered to.
     values = {
-      meet_id: document.getElementById("filter-meet").value || state.meets[0].id,
+      meet_id: document.getElementById("filter-meet").value || newestMeet().id,
       swimmer_id: document.getElementById("filter-swimmer").value || state.swimmers[0].id,
       distance: 50,
       stroke: "FR",
@@ -529,7 +555,7 @@ function openImportDialog() {
   }
   fillSelect(document.getElementById("import-form").elements.meet_id, state.meets, (m) => `${m.name} (${m.date})`);
   importDialog.open("Import meet results", {
-    meet_id: document.getElementById("filter-meet").value || state.meets[0].id,
+    meet_id: document.getElementById("filter-meet").value || newestMeet().id,
   });
 }
 
