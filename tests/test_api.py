@@ -1,8 +1,20 @@
 import pytest
 
 
-def test_root(client):
-    assert client.get("/").json() == {"status": "running"}
+def test_root_serves_frontend(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "/static/app.js" in r.text
+
+
+@pytest.mark.parametrize("path", ["/static/app.js", "/static/styles.css"])
+def test_static_assets_served(client, path):
+    assert client.get(path).status_code == 200
+
+
+def test_health(client):
+    assert client.get("/health").json() == {"status": "running"}
 
 
 # --- swimmers --------------------------------------------------------------
@@ -238,3 +250,61 @@ def test_time_standard_list_filters(client, swim_event):
     assert count(gender="M") == 1
     assert count(season="2024-2028") == 1
     assert count(organization="USA Swimming", gender="M") == 0
+
+
+# --- deletes ---------------------------------------------------------------
+
+@pytest.mark.parametrize("path", ["/swimmers/999", "/meets/999", "/meet_entries/999", "/swim_times/999"])
+def test_delete_missing(client, path):
+    assert client.delete(path).status_code == 404
+
+
+def _add_time(client, meet_entry_id, seconds=30.0):
+    return client.post("/swim_times/", json={"meet_entry_id": meet_entry_id, "time_seconds": seconds}).json()
+
+
+def test_swim_time_delete_keeps_entry(client, meet_entry):
+    st = _add_time(client, meet_entry.id)
+    assert client.delete(f"/swim_times/{st['id']}").status_code == 204
+    assert client.get("/swim_times/").json() == []
+    assert len(client.get("/meet_entries/").json()) == 1
+    # entry can get a fresh time afterwards
+    assert client.post("/swim_times/", json={"meet_entry_id": meet_entry.id, "time_seconds": 29.0}).status_code == 200
+
+
+def test_meet_entry_delete_cascades_to_time(client, meet_entry):
+    _add_time(client, meet_entry.id)
+    assert client.delete(f"/meet_entries/{meet_entry.id}").status_code == 204
+    assert client.get("/meet_entries/").json() == []
+    assert client.get("/swim_times/").json() == []
+
+
+@pytest.fixture
+def two_entries(client, meet_entry, swimmer, meet, swim_event):
+    """meet_entry plus a second entry sharing its meet but with another swimmer,
+    and a third sharing its swimmer at another meet; all three have times."""
+    other_swimmer = client.post("/swimmers/", json={"name": "B", "birthdate": "2013-01-01", "gender": "M"}).json()
+    other_meet = client.post("/meets/", json={"name": "Other", "date": "2026-02-01"}).json()
+    same_meet = client.post("/meet_entries/", json={
+        "meet_id": meet.id, "swimmer_id": other_swimmer["id"], "event_id": swim_event.id}).json()
+    same_swimmer = client.post("/meet_entries/", json={
+        "meet_id": other_meet["id"], "swimmer_id": swimmer.id, "event_id": swim_event.id}).json()
+    for entry_id in (meet_entry.id, same_meet["id"], same_swimmer["id"]):
+        _add_time(client, entry_id)
+    return same_meet, same_swimmer
+
+
+def test_swimmer_delete_cascades(client, swimmer, two_entries):
+    same_meet, _ = two_entries
+    assert client.delete(f"/swimmers/{swimmer.id}").status_code == 204
+    assert [e["id"] for e in client.get("/meet_entries/").json()] == [same_meet["id"]]
+    assert [t["meet_entry_id"] for t in client.get("/swim_times/").json()] == [same_meet["id"]]
+    assert len(client.get("/meets/").json()) == 2  # meets untouched
+
+
+def test_meet_delete_cascades(client, meet, two_entries):
+    _, same_swimmer = two_entries
+    assert client.delete(f"/meets/{meet.id}").status_code == 204
+    assert [e["id"] for e in client.get("/meet_entries/").json()] == [same_swimmer["id"]]
+    assert [t["meet_entry_id"] for t in client.get("/swim_times/").json()] == [same_swimmer["id"]]
+    assert len(client.get("/swimmers/").json()) == 2  # swimmers untouched

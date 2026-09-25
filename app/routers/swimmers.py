@@ -19,3 +19,8 @@ def update_swimmer(swimmer_id: int, update: schemas.SwimmerUpdate, db: Session =
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Swimmer {swimmer_id} not found")
     return updated
+
+@router.delete("/{swimmer_id}", status_code=204)
+def delete_swimmer(swimmer_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_swimmer(db, swimmer_id):
+        raise HTTPException(status_code=404, detail=f"Swimmer {swimmer_id} not found")

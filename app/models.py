@@ -32,7 +32,10 @@ class Swimmer(Base):
     gender: Mapped[str] = mapped_column(String(10))  # used for matching time standards
     notes: Mapped[str | None] = mapped_column(String(500), default=None)
 
-    meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="swimmer")
+    # Deleting a swimmer deletes their meet entries (and, via MeetEntry, their times).
+    meet_entries: Mapped[list["MeetEntry"]] = relationship(
+        back_populates="swimmer", cascade="all, delete"
+    )
 
 
 class Meet(Base):
@@ -45,7 +48,10 @@ class Meet(Base):
     date: Mapped[date_type] = mapped_column(Date)
     location: Mapped[str | None] = mapped_column(String(200), default=None)
 
-    meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="meet")
+    # Deleting a meet deletes its meet entries (and, via MeetEntry, their times).
+    meet_entries: Mapped[list["MeetEntry"]] = relationship(
+        back_populates="meet", cascade="all, delete"
+    )
 
 
 class Event(Base):
@@ -88,7 +94,7 @@ class MeetEntry(Base):
     swimmer: Mapped["Swimmer"] = relationship(back_populates="meet_entries")
     event: Mapped["Event"] = relationship(back_populates="meet_entries")
     swim_time: Mapped["SwimTime | None"] = relationship(
-        back_populates="meet_entry", uselist=False
+        back_populates="meet_entry", uselist=False, cascade="all, delete"
     )
 
     __table_args__ = (

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards. There is no frontend or linter configured yet.
+A FastAPI + SQLAlchemy 2.0 (SQLite) backend for tracking a swimmer's meet results against USA Swimming and MN Swimming time standards, with a small no-build web frontend served by the same app. There is no linter configured yet.
 
 ## Commands
 
@@ -16,7 +16,7 @@ python -m venv venv; .\venv\Scripts\Activate.ps1; pip install -r requirements.tx
 
 cd app
 python create_db.py                     # create tables (create_all only; no migrations)
-uvicorn main:app --reload               # run API; interactive docs at /docs
+uvicorn main:app --reload               # web UI at /, API docs at /docs, health check at /health
 python import_time_standards.py         # bulk-load standards from app/time_standards/*.pdf
 python import_meet_results.py results.pdf --meet-id 3 [--team WEST-MN]
 ```
@@ -27,9 +27,10 @@ Tests run from the **repo root** (`pytest.ini` puts `app/` on the path and enabl
 pip install -r requirements-dev.txt
 pytest                                             # full suite + coverage report
 pytest tests/test_api.py::test_event_duplicate     # single test
+pytest -m "not ui"                                 # skip the browser tests
 ```
 
-Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
+Tests use an in-memory SQLite DB (`tests/conftest.py`, `StaticPool`) and override `database.get_db`; they never touch `swim_tracker.db`. Frontend tests (marked `ui`) use Playwright against a live uvicorn thread (`live_server` fixture). They launch the installed Chrome or Edge, falling back to Playwright's Chromium, and skip if no browser is found. They use a temporary SQLite *file* instead of `StaticPool`, because the page sends parallel requests that the server answers on separate threads, and those threads can't safely share a single connection. The PDF importers are tested by monkeypatching `pdfplumber.open` with `FakePDF`/`FakePage` objects built from `{"text", "x0", "top"}` word dicts, and their `main()` functions by patching the module's `SessionLocal`.
 
 There is no migration tool (no Alembic). Schema changes to `models.py` require deleting `app/swim_tracker.db` and re-running `create_db.py` + the import scripts. The `*.db` file and `time_standards/` PDF folder are gitignored.
 
@@ -42,8 +43,19 @@ Layering per resource: `routers/<resource>.py` (HTTP, validation of FK existence
 - **Times are stored as float seconds**, never formatted strings; format at the display layer.
 - **Gender** is constrained to `"F"`/`"M"` in schemas so swimmers match `TimeStandard.gender`.
 - **PATCH pattern**: `XUpdate` schemas have all-optional fields; `crud._apply_update` applies only `model_dump(exclude_unset=True)`. NOT NULL columns use the `_reject_null` validator so a field can be omitted but not explicitly set to null.
+- **DELETE** endpoints exist for swimmers, meets, meet entries, and swim times (204, or 404 if missing). Deletes cascade through ORM relationships (`cascade="all, delete"`): swimmer/meet → its meet entries → their swim time. Events and time standards have no delete endpoint.
 - **Creating a duplicate** (e.g. a second `SwimTime` for a meet entry) returns 400 pointing to the PATCH endpoint rather than upserting.
 - `models.py` imports `date as date_type` deliberately: under Python 3.14 lazy annotations, a column named `date` annotated with bare `date` would resolve to itself.
+
+## Frontend
+
+`app/static/` (`index.html`, `app.js`, `styles.css`) is plain HTML/JS with no build step or dependencies. `main.py` serves `index.html` at `/` and mounts the directory at `/static`. The page calls the JSON API with `fetch`, loads every list on startup, and reloads them all after each change (the dataset is small). It has three tabs: Entries & Results, Swimmers, and Meets.
+
+- Meet entries and their result are edited in one dialog. The event is chosen by distance/stroke/course and created through `POST /events/` if it doesn't exist. The time is entered as `ss.xx` or `m:ss.xx` and sent as float seconds. Clearing the time deletes the `SwimTime`.
+- Deletes use `confirm()` and say how many entries and results the cascade will remove.
+- All user data is rendered with `textContent`, never `innerHTML`.
+- Styling uses West Express colors: orange `#F2661B` and black as primary, purple `#5A2D82` as secondary, set as CSS custom properties at the top of `styles.css`, with a dark-mode override. Fonts are Barlow Condensed and Barlow from Google Fonts, falling back to system fonts when offline. Times are shown in a scoreboard-style `.clock` element. Below 640px the entries table stacks each row, and the swimmer/meet tables hide the `.c-birthdate`, `.c-notes`, and `.c-location` columns.
+- Tests: `tests/test_frontend_js.py` calls `app.js`'s helpers (`parseTime`, `formatTime`, etc.) directly in a browser page, `tests/test_frontend_ui.py` drives the UI end to end, and `tests/test_frontend_static.py` checks that every element id `app.js` looks up exists in `index.html`.
 
 ## Import scripts
 

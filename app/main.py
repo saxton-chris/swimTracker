@@ -1,5 +1,11 @@
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from routers import swimmers, meets, events, meet_entries, time_standards, swim_times
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 app = FastAPI()
 app.include_router(swimmers.router)
@@ -8,7 +14,12 @@ app.include_router(events.router)
 app.include_router(meet_entries.router)
 app.include_router(time_standards.router)
 app.include_router(swim_times.router)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-@app.get("/")
-def root():
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
+
+@app.get("/health")
+def health():
     return {"status": "running"}

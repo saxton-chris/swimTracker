@@ -1,0 +1,294 @@
+/* West Express colors: orange + black primary, purple secondary.
+   The one loud element is the scoreboard-style time readout; the lane-rope
+   stripe under the header is the only other decoration. */
+
+:root {
+  --black: #000000;
+  --orange: #f2661b;
+  --purple: #5a2d82;
+
+  --bg: #f4f3f7;
+  --surface: #ffffff;
+  --text: #1c1b1f;
+  --muted: #625e6b;
+  --border: #dedbe5;
+  --row-hover: #f3eef9;
+  --link: var(--purple);
+  --focus: var(--purple);
+  --danger: #b3261e;
+  --header-bg: var(--black);
+  --header-text: #ffffff;
+  --header-muted: #b9b5c2;
+  --clock-bg: var(--black);
+  --clock-text: var(--orange);
+  --radius: 6px;
+
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121015;
+    --surface: #1c1a20;
+    --text: #ecebef;
+    --muted: #a7a2b1;
+    --border: #34303b;
+    --row-hover: #26212d;
+    --link: #c09ae6;
+    --focus: #c09ae6;
+    --danger: #f2877f;
+    --clock-bg: var(--black);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 var(--font-body);
+}
+
+/* --- header: black band + lane rope ------------------------------------- */
+
+.topbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 32px;
+  padding: 14px 16px 0;
+  background: var(--header-bg);
+  color: var(--header-text);
+}
+/* Lane rope: alternating float segments in team colors. */
+.topbar::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 8px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--orange) 0 28px,
+    var(--black) 28px 36px,
+    var(--purple) 36px 64px,
+    var(--black) 64px 72px
+  );
+}
+
+.topbar h1 {
+  margin: 0 0 12px;
+  font: 700 1.75rem/1 var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab {
+  border: none;
+  border-bottom: 4px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--header-muted);
+  padding: 6px 10px 8px;
+  font: 600 1.1rem/1.2 var(--font-display);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.tab:hover { color: var(--header-text); border-color: transparent; }
+.tab[aria-selected="true"] { color: var(--orange); border-bottom-color: var(--orange); }
+
+main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 48px; }
+
+/* --- toolbar & controls --------------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.toolbar label { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; font-weight: 500; color: var(--muted); }
+.spacer { flex: 1; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+button {
+  padding: 7px 16px;
+  border: 1.5px solid var(--text);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover { background: var(--row-hover); }
+
+button.primary {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: var(--black);
+  font: 700 1.05rem/1.2 var(--font-display);
+  letter-spacing: 0.02em;
+  padding: 8px 18px;
+}
+button.primary:hover { background: #ff7a33; border-color: #ff7a33; }
+button.primary:disabled { opacity: 0.6; cursor: progress; }
+
+button.link {
+  border: none;
+  background: none;
+  padding: 2px 6px;
+  color: var(--link);
+  font-weight: 600;
+}
+button.link:hover { background: none; text-decoration: underline; text-underline-offset: 3px; }
+button.link.danger { color: var(--danger); font-weight: 500; }
+button.link.name { padding-left: 0; text-align: left; }
+
+input, select, textarea {
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+input:focus, select:focus, textarea:focus, button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* --- tables --------------------------------------------------------------- */
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--text);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 14px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th {
+  font: 600 1rem/1.2 var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--row-hover); }
+td.notes { white-space: normal; min-width: 120px; max-width: 280px; color: var(--muted); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.actions { text-align: right; }
+td.pending { color: var(--muted); }
+
+/* Scoreboard readout: orange digits on a black panel, like a pool timing board. */
+.clock {
+  display: inline-block;
+  min-width: 5.2em;
+  padding: 3px 9px 2px;
+  border-radius: 3px;
+  background: var(--clock-bg);
+  color: var(--clock-text);
+  font: 600 1.2rem/1.1 var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  text-align: right;
+}
+
+.empty { color: var(--muted); text-align: center; padding: 28px 16px; }
+
+/* --- dialogs -------------------------------------------------------------- */
+
+dialog {
+  width: min(480px, calc(100vw - 32px));
+  border: none;
+  border-top: 6px solid var(--orange);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 20px 22px 22px;
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.35);
+}
+dialog::backdrop { background: rgb(20 8 32 / 0.55); }
+dialog h2 { margin: 0 0 14px; font: 700 1.5rem/1.1 var(--font-display); }
+dialog form { display: flex; flex-direction: column; gap: 12px; }
+dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 500; }
+dialog .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+fieldset {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--purple);
+  border-radius: var(--radius);
+  padding: 8px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+legend { font: 600 1rem/1 var(--font-display); color: var(--text); padding: 0 6px; }
+.hint { margin: 0; font-size: 0.82rem; color: var(--muted); }
+.form-error { margin: 0; color: var(--danger); font-size: 0.9rem; font-weight: 500; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+/* --- toast ---------------------------------------------------------------- */
+
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px 16px;
+  border-left: 5px solid var(--orange);
+  border-radius: var(--radius);
+  background: var(--black);
+  color: #ffffff;
+  font-weight: 500;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+  z-index: 10;
+}
+.toast.error { border-left-color: #f2877f; background: #5c1511; }
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog[open] { animation: rise 140ms ease-out; }
+  @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+}
+
+@media (max-width: 640px) {
+  .topbar { gap: 0 16px; }
+  .topbar h1 { font-size: 1.5rem; }
+  dialog .row { grid-template-columns: 1fr; }
+  .toolbar label, .toolbar select { width: 100%; }
+
+  /* Swimmers / meets: drop the low-priority columns so actions stay on screen. */
+  .c-birthdate, .c-notes, .c-location { display: none; }
+  td.c-name { white-space: normal; }
+  th, td { padding: 10px; }
+
+  /* Entries: each row becomes a stacked result with the time on the right. */
+  #view-entries thead { display: none; }
+  #view-entries tbody tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "swimmer time"
+      "event   time"
+      "meet    date"
+      "notes   actions";
+    column-gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  #view-entries tbody tr:last-child { border-bottom: none; }
+  #view-entries td { padding: 0; border: none; white-space: normal; }
+  #view-entries td.c-swimmer { grid-area: swimmer; font-weight: 600; }
+  #view-entries td.c-event { grid-area: event; color: var(--muted); }
+  #view-entries td.c-time { grid-area: time; align-self: center; }
+  #view-entries td.c-meet { grid-area: meet; margin-top: 6px; font-size: 0.9rem; }
+  #view-entries td.c-date { grid-area: date; margin-top: 6px; font-size: 0.9rem; color: var(--muted); text-align: right; }
+  #view-entries td.c-notes { display: block; grid-area: notes; align-self: center; font-size: 0.9rem; }
+  #view-entries td.actions { grid-area: actions; margin-top: 4px; }
+}
