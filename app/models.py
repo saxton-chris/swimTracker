@@ -1,5 +1,5 @@
 import enum
-from datetime import date
+from datetime import date as date_type
 
 from sqlalchemy import Date, Enum as SAEnum, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -28,7 +28,7 @@ class Swimmer(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
-    birthdate: Mapped[date] = mapped_column(Date)
+    birthdate: Mapped[date_type] = mapped_column(Date)
     gender: Mapped[str] = mapped_column(String(10))  # used for matching time standards
     notes: Mapped[str | None] = mapped_column(String(500), default=None)
 
@@ -40,7 +40,9 @@ class Meet(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150))
-    date: Mapped[date] = mapped_column(Date)
+    # date_type alias: a bare `date` annotation here would resolve to this
+    # column itself (Python 3.14 lazy annotations), not datetime.date.
+    date: Mapped[date_type] = mapped_column(Date)
     location: Mapped[str | None] = mapped_column(String(200), default=None)
 
     meet_entries: Mapped[list["MeetEntry"]] = relationship(back_populates="meet")
@@ -141,4 +143,3 @@ class TimeStandard(Base):
             name="uix_time_standard",
         ),
     )
-    

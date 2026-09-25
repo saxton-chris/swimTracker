@@ -3,6 +3,17 @@ from models import Swimmer, Meet, Event, MeetEntry, TimeStandard, SwimTime
 import schemas
 
 
+def _apply_update(db: Session, db_obj, update):
+    """Copy only the fields the client actually sent onto db_obj and commit."""
+    if db_obj is None:
+        return None
+    for field, value in update.model_dump(exclude_unset=True).items():
+        setattr(db_obj, field, value)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+
 def create_swimmer(db: Session, swimmer: schemas.SwimmerCreate):
     db_swimmer = Swimmer(**swimmer.model_dump())
     db.add(db_swimmer)
@@ -16,14 +27,7 @@ def get_swimmers(db: Session):
 
 
 def update_swimmer(db: Session, swimmer_id: int, update: schemas.SwimmerUpdate):
-    db_swimmer = db.query(Swimmer).filter(Swimmer.id == swimmer_id).first()
-    if db_swimmer is None:
-        return None
-    for field, value in update.model_dump(exclude_unset=True).items():
-        setattr(db_swimmer, field, value)
-    db.commit()
-    db.refresh(db_swimmer)
-    return db_swimmer
+    return _apply_update(db, db.get(Swimmer, swimmer_id), update)
 
 
 def create_meet(db: Session, meet: schemas.MeetCreate):
@@ -39,14 +43,7 @@ def get_meets(db: Session):
 
 
 def update_meet(db: Session, meet_id: int, update: schemas.MeetUpdate):
-    db_meet = db.query(Meet).filter(Meet.id == meet_id).first()
-    if db_meet is None:
-        return None
-    for field, value in update.model_dump(exclude_unset=True).items():
-        setattr(db_meet, field, value)
-    db.commit()
-    db.refresh(db_meet)
-    return db_meet
+    return _apply_update(db, db.get(Meet, meet_id), update)
 
 
 def create_event(db: Session, event: schemas.EventCreate):
@@ -70,15 +67,15 @@ def get_event(db: Session, distance: int, stroke, course):
 
 
 def get_swimmer_by_id(db: Session, swimmer_id: int):
-    return db.query(Swimmer).filter(Swimmer.id == swimmer_id).first()
+    return db.get(Swimmer, swimmer_id)
 
 
 def get_meet_by_id(db: Session, meet_id: int):
-    return db.query(Meet).filter(Meet.id == meet_id).first()
+    return db.get(Meet, meet_id)
 
 
 def get_event_by_id(db: Session, event_id: int):
-    return db.query(Event).filter(Event.id == event_id).first()
+    return db.get(Event, event_id)
 
 
 def get_meet_entry(db: Session, meet_id: int, swimmer_id: int, event_id: int):
@@ -111,18 +108,11 @@ def get_meet_entries(db: Session, meet_id: int | None = None, swimmer_id: int | 
 
 
 def get_meet_entry_by_id(db: Session, meet_entry_id: int):
-    return db.query(MeetEntry).filter(MeetEntry.id == meet_entry_id).first()
+    return db.get(MeetEntry, meet_entry_id)
 
 
 def update_meet_entry(db: Session, meet_entry_id: int, update: schemas.MeetEntryUpdate):
-    db_meet_entry = get_meet_entry_by_id(db, meet_entry_id)
-    if db_meet_entry is None:
-        return None
-    for field, value in update.model_dump(exclude_unset=True).items():
-        setattr(db_meet_entry, field, value)
-    db.commit()
-    db.refresh(db_meet_entry)
-    return db_meet_entry
+    return _apply_update(db, get_meet_entry_by_id(db, meet_entry_id), update)
 
 
 def get_time_standard(
@@ -182,7 +172,7 @@ def create_swim_time(db: Session, swim_time: schemas.SwimTimeCreate):
 
 
 def get_swim_time_by_id(db: Session, swim_time_id: int):
-    return db.query(SwimTime).filter(SwimTime.id == swim_time_id).first()
+    return db.get(SwimTime, swim_time_id)
 
 
 def get_swim_time_by_meet_entry(db: Session, meet_entry_id: int):
@@ -197,11 +187,4 @@ def get_swim_times(db: Session, meet_entry_id: int | None = None):
 
 
 def update_swim_time(db: Session, swim_time_id: int, update: schemas.SwimTimeUpdate):
-    db_swim_time = get_swim_time_by_id(db, swim_time_id)
-    if db_swim_time is None:
-        return None
-    for field, value in update.model_dump(exclude_unset=True).items():
-        setattr(db_swim_time, field, value)
-    db.commit()
-    db.refresh(db_swim_time)
-    return db_swim_time
+    return _apply_update(db, get_swim_time_by_id(db, swim_time_id), update)

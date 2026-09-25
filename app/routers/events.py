@@ -1,16 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from database import get_db
 import crud, schemas
 
 router = APIRouter(prefix="/events", tags=["events"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/", response_model=schemas.EventOut)
 def add_event(event: schemas.EventCreate, db: Session = Depends(get_db)):

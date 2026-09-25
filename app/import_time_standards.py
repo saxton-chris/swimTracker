@@ -1,9 +1,11 @@
 """
 Bulk-import time standards from PDF files into the swim tracker database.
 
-Run this from the project root (same folder as database.py, crud.py, models.py):
+Run from the app/ folder (same folder as database.py, crud.py, models.py):
 
     python import_time_standards.py
+
+The PDFs are read from the time_standards/ folder next to this script.
 
 Handles two known PDF layouts:
   - USA Swimming Motivational Standards (organization="USA Swimming")
@@ -51,12 +53,12 @@ from models import Stroke, Course
 
 def cluster_rows(words, tol=2.5):
     """Group words into rows by y-position ('top'), tolerating small jitter."""
+    # Words are visited top-down and each row's anchor is more than `tol` below
+    # the previous one, so only the most recent row can ever match - O(n).
     rows = []
     for w in sorted(words, key=lambda w: w["top"]):
-        for row in rows:
-            if abs(row["top"] - w["top"]) <= tol:
-                row["words"].append(w)
-                break
+        if rows and w["top"] - rows[-1]["top"] <= tol:
+            rows[-1]["words"].append(w)
         else:
             rows.append({"top": w["top"], "words": [w]})
     return rows
@@ -78,7 +80,7 @@ def bucket_columns(row_words, boundaries):
 
 
 def parse_time(raw):
-    """'‌:58.59' / '1:44.09' / '36.29' -> seconds (float). None if unrecognized."""
+    """':58.59' / '1:44.09' / '36.29' -> seconds (float). None if unrecognized."""
     s = raw.replace("*", "").strip()
     m = re.match(r"^:(\d{1,2}\.\d{2})$", s)  # leading colon, no minutes
     if m:
@@ -201,6 +203,9 @@ def import_usa_standards(db, pdf_path, stats):
                 m = re.match(r"^(\d+)\s+(FR|BK|BR|FL|IM)\s+(SCY|SCM|LCM)$", evt_txt)
                 if not m:
                     continue  # relay row, wrapped continuation, or non-data text
+                if current_age_group is None:
+                    stats.malformed.append(f"USA p{page.page_number} {evt_txt}: data row before any age-group header")
+                    continue
 
                 distance, stroke_txt, course_txt = m.groups()
                 event = get_or_create_event(db, int(distance), Stroke(stroke_txt), Course(course_txt), stats)
@@ -250,6 +255,9 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
 
         tier_words = [w for w in legend_row["words"] if w["text"] in MN_GIRLS_ORDER]
         event_hdr = [w for w in legend_row["words"] if w["text"] == "Event"]
+        if not event_hdr:
+            print(f"  WARNING: no 'Event' column header on the legend row in {pdf_path} - skipping file")
+            return
         event_x0 = event_hdr[0]["x0"]
         all_x0 = sorted(set(round(w["x0"], 1) for w in tier_words) | {event_x0})
         boundaries = column_boundaries(all_x0)
@@ -272,6 +280,9 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
             evt_txt = cols.get(event_idx, "").strip()
             m = re.match(r"^(\d+)\s+(Free|Back|Breast|Fly|IM)$", evt_txt)
             if not m:
+                continue
+            if current_age_group is None:
+                stats.malformed.append(f"MN {course.value} {evt_txt}: data row before any age-group header")
                 continue
 
             distance, stroke_txt = m.groups()
@@ -301,10 +312,12 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
 # Main
 # ---------------------------------------------------------------------------
 
+STANDARDS_DIR = Path(__file__).parent / "time_standards"
+
 FILES = {
-    "USA Swimming Motivational Standards": ("usa", "time_standards/USA_Swimming_Motivational_Standards.pdf", None),
-    "MN Swimming SCY Standards": ("mn", "time_standards/MN_Swimming_SCY_Standards.pdf", Course.SCY),
-    "MN Swimming LCM Standards": ("mn", "time_standards/MN_Swimming_LCM_Standards.pdf", Course.LCM),
+    "USA Swimming Motivational Standards": ("usa", "USA_Swimming_Motivational_Standards.pdf", None),
+    "MN Swimming SCY Standards": ("mn", "MN_Swimming_SCY_Standards.pdf", Course.SCY),
+    "MN Swimming LCM Standards": ("mn", "MN_Swimming_LCM_Standards.pdf", Course.LCM),
 }
 
 
@@ -312,10 +325,10 @@ def main():
     db = SessionLocal()
     try:
         for label, (kind, filename, course) in FILES.items():
-            path = Path(filename)
+            path = STANDARDS_DIR / filename
             if not path.exists():
-                print(f"SKIPPING {label}: file not found at {path.resolve()} "
-                      f"(place it next to this script, or edit the FILES dict at the bottom of the script)")
+                print(f"SKIPPING {label}: file not found at {path} "
+                      f"(place it in {STANDARDS_DIR}, or edit the FILES dict at the bottom of the script)")
                 continue
             stats = ImportStats()
             print(f"Importing {label} ...")

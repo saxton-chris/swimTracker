@@ -1,16 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from database import get_db
 import crud, schemas
 
 router = APIRouter(prefix="/time_standards", tags=["time_standards"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/", response_model=schemas.TimeStandardOut)
 def add_time_standard(time_standard: schemas.TimeStandardCreate, db: Session = Depends(get_db)):

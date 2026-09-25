@@ -1,16 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from database import SessionLocal
+from database import get_db
 import crud, schemas
 
 router = APIRouter(prefix="/meet_entries", tags=["meet_entries"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/", response_model=schemas.MeetEntryOut)
 def add_meet_entry(meet_entry: schemas.MeetEntryCreate, db: Session = Depends(get_db)):
