@@ -21,9 +21,7 @@ def make_test_engine(path=None):
     throwaway file DB with a normal pool, for the live server, whose threads
     handle concurrent requests and must not share a single connection."""
     if path is None:
-        eng = create_engine(
-            "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
-        )
+        eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     else:
         eng = create_engine(f"sqlite:///{path}", connect_args={"check_same_thread": False})
     event.listen(eng, "connect", database._enable_sqlite_foreign_keys)
@@ -67,11 +65,10 @@ def client(session_factory):
 
 # --- sample data -----------------------------------------------------------
 
+
 @pytest.fixture
 def swimmer(db):
-    return crud.create_swimmer(
-        db, schemas.SwimmerCreate(name="Adella Barber", birthdate=date(2014, 5, 1), gender="F")
-    )
+    return crud.create_swimmer(db, schemas.SwimmerCreate(name="Adella Barber", birthdate=date(2014, 5, 1), gender="F"))
 
 
 @pytest.fixture
@@ -92,6 +89,7 @@ def meet_entry(db, swimmer, meet, swim_event):
 
 
 # --- fake pdfplumber -------------------------------------------------------
+
 
 def word(text, x0, top):
     return {"text": text, "x0": x0, "top": top}
@@ -125,14 +123,15 @@ class FakePDF:
 def fake_pdfplumber(monkeypatch):
     """Returns a function that makes `module.pdfplumber.open(path)` yield the
     pages registered for that path."""
+
     def install(module, pages_by_path):
-        monkeypatch.setattr(
-            module.pdfplumber, "open", lambda path: FakePDF(pages_by_path[str(path)])
-        )
+        monkeypatch.setattr(module.pdfplumber, "open", lambda path: FakePDF(pages_by_path[str(path)]))
+
     return install
 
 
 # --- frontend (browser) tests ----------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def live_server():
@@ -164,6 +163,7 @@ def live_server():
 
 def serve_db(factory):
     """Point every request (TestClient or live server) at sessions from `factory`."""
+
     def override_get_db():
         session = factory()
         try:
@@ -218,9 +218,7 @@ def page(browser, live_server, session_factory, confirms):
     Locale/timezone are pinned so date formatting is deterministic; a zone
     west of UTC catches dates wrongly parsed as UTC midnight."""
     serve_db(session_factory)
-    context = browser.new_context(
-        base_url=live_server, locale="en-US", timezone_id="America/Chicago"
-    )
+    context = browser.new_context(base_url=live_server, locale="en-US", timezone_id="America/Chicago")
     pg = context.new_page()
     pg.set_default_timeout(5000)
     pg.on("dialog", confirms)

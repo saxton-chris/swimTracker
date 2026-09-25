@@ -73,11 +73,17 @@ TEAM_RE = re.compile(r"^[A-Z][A-Za-z]{1,5}-[A-Z]{2}$")
 TIME_RE = re.compile(r"^X?(\d{1,2}:)?\d{1,2}\.\d{2}$")
 
 STROKE_MAP = {
-    "Freestyle": Stroke.FR, "Backstroke": Stroke.BK, "Breaststroke": Stroke.BR,
-    "Butterfly": Stroke.FL, "Individual Medley": Stroke.IM, "IM": Stroke.IM,
+    "Freestyle": Stroke.FR,
+    "Backstroke": Stroke.BK,
+    "Breaststroke": Stroke.BR,
+    "Butterfly": Stroke.FL,
+    "Individual Medley": Stroke.IM,
+    "IM": Stroke.IM,
 }
 COURSE_MAP = {
-    ("LC", "Meter"): Course.LCM, ("SC", "Meter"): Course.SCM, ("SC", "Yard"): Course.SCY,
+    ("LC", "Meter"): Course.LCM,
+    ("SC", "Meter"): Course.SCM,
+    ("SC", "Yard"): Course.SCY,
 }
 
 
@@ -124,20 +130,21 @@ def parse_result_row(words):
     if not re.match(r"^\d{1,2}$", age_word):
         return None
 
-    name = " ".join(w["text"] for w in words[1:team_idx - 1])
+    name = " ".join(w["text"] for w in words[1 : team_idx - 1])
     team = words[team_idx]["text"]
 
     # Hy-Tek rows can be "... Team SeedTime FinalsTime Points"; the result is
     # the LAST time on the row (a seed, when present, comes first).
-    time_idx = next(
-        (i for i in range(len(words) - 1, team_idx, -1) if TIME_RE.match(words[i]["text"])), None
-    )
+    time_idx = next((i for i in range(len(words) - 1, team_idx, -1) if TIME_RE.match(words[i]["text"])), None)
     if time_idx is None:
         return None
 
     return {
-        "place": words[0]["text"], "name": name, "age": int(age_word),
-        "team": team, "time_seconds": parse_time(words[time_idx]["text"]),
+        "place": words[0]["text"],
+        "name": name,
+        "age": int(age_word),
+        "team": team,
+        "time_seconds": parse_time(words[time_idx]["text"]),
     }
 
 
@@ -226,6 +233,7 @@ def parse_pdf(path):
 # Swimmer name matching
 # ---------------------------------------------------------------------------
 
+
 def pdf_name_to_first_last(pdf_name):
     """'Barber, Adella F' -> 'Adella Barber' (middle initial dropped)."""
     if "," not in pdf_name:
@@ -243,6 +251,7 @@ def build_swimmer_index(db):
 # ---------------------------------------------------------------------------
 # Database import
 # ---------------------------------------------------------------------------
+
 
 def get_or_create_event(db, distance, stroke, course, stats):
     event = crud.get_event(db, distance, stroke, course)
@@ -328,15 +337,19 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(description="Import a Hy-Tek meet results PDF into swim_times.")
     parser.add_argument("pdf_path", help="Path to the results PDF")
-    parser.add_argument("--meet-id", type=int, required=True, help="ID of an existing Meet record to attach these results to")
     parser.add_argument(
-        "--team", default=None,
+        "--meet-id", type=int, required=True, help="ID of an existing Meet record to attach these results to"
+    )
+    parser.add_argument(
+        "--team",
+        default=None,
         help="Optional team abbreviation (e.g. WEST-MN) to additionally restrict matching to. "
-             "By default, no team filter is applied - any result whose name matches an existing "
-             "row in your swimmers table is imported, regardless of team.",
+        "By default, no team filter is applied - any result whose name matches an existing "
+        "row in your swimmers table is imported, regardless of team.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Parse and match only - don't write to the database")
     args = parser.parse_args()
@@ -344,17 +357,22 @@ def main():
     print(f"Parsing {args.pdf_path} ...")
     results, skip_counts = parse_pdf(args.pdf_path)
     print(f"Parsed {len(results)} individual results across all teams.")
-    print(f"Skipped: {skip_counts['relay_or_time_trial']} relay/Time-Trial rows, "
-          f"{skip_counts['dq_or_no_show']} DQ/no-show rows, "
-          f"{skip_counts['unparsed_row']} unparsed rows.")
+    print(
+        f"Skipped: {skip_counts['relay_or_time_trial']} relay/Time-Trial rows, "
+        f"{skip_counts['dq_or_no_show']} DQ/no-show rows, "
+        f"{skip_counts['unparsed_row']} unparsed rows."
+    )
 
     if args.team is not None:
         team_results = [r for r in results if r["team"] == args.team]
         print(f"\n{len(team_results)} results found for team '{args.team}'.")
 
     stats = {
-        "events_created": 0, "meet_entries_created": 0,
-        "times_imported": 0, "times_already_existed": 0, "would_import": 0,
+        "events_created": 0,
+        "meet_entries_created": 0,
+        "times_imported": 0,
+        "times_already_existed": 0,
+        "would_import": 0,
     }
     unmatched_names = set()
 
@@ -366,8 +384,10 @@ def main():
 
     print()
     if args.dry_run:
-        print(f"DRY RUN - would import {stats['would_import']} times, "
-              f"{stats['times_already_existed']} already imported (no database changes made).")
+        print(
+            f"DRY RUN - would import {stats['would_import']} times, "
+            f"{stats['times_already_existed']} already imported (no database changes made)."
+        )
     else:
         print(f"New events auto-created: {stats['events_created']}")
         print(f"New meet entries created: {stats['meet_entries_created']}")

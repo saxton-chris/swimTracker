@@ -28,20 +28,31 @@ def rows_of(*word_lists):
 
 # --- pure helpers ----------------------------------------------------------
 
-@pytest.mark.parametrize("raw, expected", [
-    ("1:23.49", 83.49), ("43.23", 43.23), ("X1:05.10", 65.1), ("X29.50", 29.5),
-    ("NT", None), ("123:00.00", None),
-])
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("1:23.49", 83.49),
+        ("43.23", 43.23),
+        ("X1:05.10", 65.1),
+        ("X29.50", 29.5),
+        ("NT", None),
+        ("123:00.00", None),
+    ],
+)
 def test_parse_time(raw, expected):
     assert imr.parse_time(raw) == (pytest.approx(expected) if expected is not None else None)
 
 
-@pytest.mark.parametrize("pdf_name, expected", [
-    ("Barber, Adella F", "Adella Barber"),
-    ("Barber,Adella", "Adella Barber"),
-    ("  Van Dyke ,  Sam  ", "Sam Van Dyke"),
-    ("No Comma", None),
-])
+@pytest.mark.parametrize(
+    "pdf_name, expected",
+    [
+        ("Barber, Adella F", "Adella Barber"),
+        ("Barber,Adella", "Adella Barber"),
+        ("  Van Dyke ,  Sam  ", "Sam Van Dyke"),
+        ("No Comma", None),
+    ],
+)
 def test_pdf_name_to_first_last(pdf_name, expected):
     assert imr.pdf_name_to_first_last(pdf_name) == expected
 
@@ -51,12 +62,15 @@ def test_cluster_rows():
     assert [[w["text"] for w in r["words"]] for r in rows] == [["a", "b"], ["c"]]
 
 
-@pytest.mark.parametrize("text, expected", [
-    ("Event 1 Girls 11-12 50 SC Yard Freestyle", ("50", "SC", "Yard", "Freestyle", None, None)),
-    ("Boys 13-14 100 LC Meter Individual Medley", ("100", "LC", "Meter", "Individual Medley", None, None)),
-    ("Event 7 Mixed 10 & Under 200 SC Meter Freestyle Relay", ("200", "SC", "Meter", "Freestyle", " Relay", None)),
-    ("Event 9 Women Open 50 SC Yard Butterfly Time Trial", ("50", "SC", "Yard", "Butterfly", None, " Time Trial")),
-])
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Event 1 Girls 11-12 50 SC Yard Freestyle", ("50", "SC", "Yard", "Freestyle", None, None)),
+        ("Boys 13-14 100 LC Meter Individual Medley", ("100", "LC", "Meter", "Individual Medley", None, None)),
+        ("Event 7 Mixed 10 & Under 200 SC Meter Freestyle Relay", ("200", "SC", "Meter", "Freestyle", " Relay", None)),
+        ("Event 9 Women Open 50 SC Yard Butterfly Time Trial", ("50", "SC", "Yard", "Butterfly", None, " Time Trial")),
+    ],
+)
 def test_event_re(text, expected):
     m = imr.EVENT_RE.match(text)
     assert m.group("distance", "course", "unit", "stroke", "relay", "timetrial") == expected
@@ -65,27 +79,36 @@ def test_event_re(text, expected):
 class TestParseResultRow:
     def test_full_row_uses_last_time(self):
         r = imr.parse_result_row(result_row(0, "1", "Barber, Adella F", "12", "WEST-MN", "30.00", "29.50", "20"))
-        assert r == {"place": "1", "name": "Barber, Adella F", "age": 12, "team": "WEST-MN",
-                     "time_seconds": pytest.approx(29.5)}
+        assert r == {
+            "place": "1",
+            "name": "Barber, Adella F",
+            "age": 12,
+            "team": "WEST-MN",
+            "time_seconds": pytest.approx(29.5),
+        }
 
     def test_word_order_does_not_matter(self):
         words = result_row(0, "3", "Doe, Jo", "9", "AB-MN", "X45.00")
         r = imr.parse_result_row(list(reversed(words)))
         assert r["name"] == "Doe, Jo" and r["time_seconds"] == pytest.approx(45.0)
 
-    @pytest.mark.parametrize("words", [
-        [],
-        text_row("Barber, Adella 12 WEST-MN 30.00", 0),             # no place
-        text_row("1 WEST-MN 1:50.00", 0),                            # relay team row
-        text_row("1 Barber, Adella 30.00", 0),                       # no team token
-        text_row("2 Foo WEST-MN 30.00", 0),                          # no age before team
-        text_row("1 Barber, Adella 12 WEST-MN DQ", 0),               # no time
-    ])
+    @pytest.mark.parametrize(
+        "words",
+        [
+            [],
+            text_row("Barber, Adella 12 WEST-MN 30.00", 0),  # no place
+            text_row("1 WEST-MN 1:50.00", 0),  # relay team row
+            text_row("1 Barber, Adella 30.00", 0),  # no team token
+            text_row("2 Foo WEST-MN 30.00", 0),  # no age before team
+            text_row("1 Barber, Adella 12 WEST-MN DQ", 0),  # no time
+        ],
+    )
     def test_rejects(self, words):
         assert imr.parse_result_row(words) is None
 
 
 # --- process_column --------------------------------------------------------
+
 
 def left_column_rows():
     return rows_of(
@@ -93,8 +116,8 @@ def left_column_rows():
         text_row("Name Age Team Seed Finals", 20),
         result_row(30, "1", "Barber, Adella F", "12", "WEST-MN", "30.00", "29.50"),
         text_row("--- Smith, Jane 11 WEST-MN DQ", 40),
-        text_row("15.00 29.50", 50),                                  # splits line
-        text_row("2 Foo WEST-MN 30.00", 60),                          # numbered but malformed
+        text_row("15.00 29.50", 50),  # splits line
+        text_row("2 Foo WEST-MN 30.00", 60),  # numbered but malformed
         text_row("Event 2 Girls 11-12 200 SC Yard Freestyle Relay", 70),
         text_row("1 WEST-MN 1:50.00", 80),
         text_row("--- WEST-MN DQ", 90),
@@ -115,10 +138,13 @@ def test_process_column(capsys):
     assert "unrecognized event header" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("header", [
-    "Event 4 Boys 13-14 50 SC Yard Butterfly Time Trial",
-    "Event 5 Boys 13-14 200 SC Meter Medley",  # stroke not individually supported
-])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "Event 4 Boys 13-14 50 SC Yard Butterfly Time Trial",
+        "Event 5 Boys 13-14 200 SC Meter Medley",  # stroke not individually supported
+    ],
+)
 def test_process_column_skips_unsupported_blocks(header):
     skips = {"relay_or_time_trial": 0, "dq_or_no_show": 0, "unparsed_row": 0}
     rows = rows_of(text_row(header, 10), result_row(20, "1", "Lee, Sam", "13", "WEST-MN", "30.00"))
@@ -153,7 +179,7 @@ def test_process_column_state_carries_event_into_next_column():
         result_row(20, "1", "Gallant, Seb M", "10", "TUNA-MN", "32.64"),
     )
     second = rows_of(
-        text_row("HY-TEK's MEET MANAGER 8.0 - Page 16", 5),             # page furniture, ignored
+        text_row("HY-TEK's MEET MANAGER 8.0 - Page 16", 5),  # page furniture, ignored
         result_row(10, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16", "CH"),
     )
     assert len(imr.process_column(first, skips, state)) == 1
@@ -175,32 +201,44 @@ def test_process_column_state_carries_skipped_block_too():
     """A relay continuing into the next column must stay skipped, not be
     attributed to whatever individual event came before it."""
     skips, state = new_skips(), {"event": None}
-    imr.process_column(rows_of(
-        text_row("Girls 9-10 50 LC Meter Backstroke", 10),
-        result_row(20, "1", "Lee, Sam", "10", "WEST-MN", "40.00"),
-        text_row("Girls 9-10 200 LC Meter Medley Relay", 30),
-    ), skips, state)
+    imr.process_column(
+        rows_of(
+            text_row("Girls 9-10 50 LC Meter Backstroke", 10),
+            result_row(20, "1", "Lee, Sam", "10", "WEST-MN", "40.00"),
+            text_row("Girls 9-10 200 LC Meter Medley Relay", 30),
+        ),
+        skips,
+        state,
+    )
     assert imr.process_column(rows_of(text_row("2 EDI-MN A 3:10.00 34", 10)), skips, state) == []
     assert state["event"] is None
 
 
-@pytest.mark.parametrize("header, expected_event", [
-    ("(Boys 9-10 100 LC Meter Backstroke)", {"distance": 100, "stroke": Stroke.BK, "course": Course.LCM}),
-    ("(Boys 8 & Under 200 LC Meter Freestyle Relay)", None),
-])
+@pytest.mark.parametrize(
+    "header, expected_event",
+    [
+        ("(Boys 9-10 100 LC Meter Backstroke)", {"distance": 100, "stroke": Stroke.BK, "course": Course.LCM}),
+        ("(Boys 8 & Under 200 LC Meter Freestyle Relay)", None),
+    ],
+)
 def test_process_column_parenthesized_continuation_header(header, expected_event):
     """Page-top '(Event ...)' continuation headers set the event, overriding stale state."""
     stale = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY}
     skips, state = new_skips(), {"event": stale}
-    results = imr.process_column(rows_of(
-        text_row(header, 10),
-        result_row(20, "5", "Doe, Jo", "10", "WEST-MN", "1:30.00"),
-    ), skips, state)
+    results = imr.process_column(
+        rows_of(
+            text_row(header, 10),
+            result_row(20, "5", "Doe, Jo", "10", "WEST-MN", "1:30.00"),
+        ),
+        skips,
+        state,
+    )
     assert state["event"] == expected_event
     assert [r["event"] for r in results] == ([expected_event] if expected_event else [])
 
 
 # --- parse_pdf -------------------------------------------------------------
+
 
 def results_pages():
     right = text_row("Event 4 Boys 13-14 100 LC Meter Butterfly", 10, x_offset=300)
@@ -214,7 +252,8 @@ def test_parse_pdf_splits_columns(fake_pdfplumber):
     results, skips = imr.parse_pdf("results.pdf")
 
     assert [(r["name"], r["team"]) for r in results] == [
-        ("Barber, Adella F", "WEST-MN"), ("Lee, Sam", "NORTH-MN"),
+        ("Barber, Adella F", "WEST-MN"),
+        ("Lee, Sam", "NORTH-MN"),
     ]
     assert results[1]["event"] == {"distance": 100, "stroke": Stroke.FL, "course": Course.LCM}
     assert results[1]["time_seconds"] == pytest.approx(65.1)
@@ -222,7 +261,7 @@ def test_parse_pdf_splits_columns(fake_pdfplumber):
 
 
 def test_parse_pdf_event_continues_across_columns_and_pages(fake_pdfplumber):
-    page1_left = text_row("Boys 9-10 50 LC Meter Freestyle", 700)                 # header at column bottom
+    page1_left = text_row("Boys 9-10 50 LC Meter Freestyle", 700)  # header at column bottom
     page1_right = result_row(80, "1", "Du, Winston E", "10", "AQJT-MN", "33.04", x_offset=300)
     page2_left = result_row(80, "2", "Saxton, Alistair B", "10", "WEST-MN", "36.16", "CH")
     page2_left += text_row("Boys 9-10 100 LC Meter Freestyle", 200)
@@ -231,22 +270,37 @@ def test_parse_pdf_event_continues_across_columns_and_pages(fake_pdfplumber):
 
     results, skips = imr.parse_pdf("results.pdf")
     assert [(r["name"], r["event"]["distance"]) for r in results] == [
-        ("Du, Winston E", 50), ("Saxton, Alistair B", 50), ("Dennis, Brody", 100),
+        ("Du, Winston E", 50),
+        ("Saxton, Alistair B", 50),
+        ("Dennis, Brody", 100),
     ]
     assert skips["relay_or_time_trial"] == 0
 
 
 # --- import_results --------------------------------------------------------
 
-def result(name="Barber, Adella F", team="WEST-MN", time=29.5, distance=50,
-           stroke=Stroke.FR, course=Course.SCY, place="1"):
-    return {"place": place, "name": name, "age": 12, "team": team, "time_seconds": time,
-            "event": {"distance": distance, "stroke": stroke, "course": course}}
+
+def result(
+    name="Barber, Adella F", team="WEST-MN", time=29.5, distance=50, stroke=Stroke.FR, course=Course.SCY, place="1"
+):
+    return {
+        "place": place,
+        "name": name,
+        "age": 12,
+        "team": team,
+        "time_seconds": time,
+        "event": {"distance": distance, "stroke": stroke, "course": course},
+    }
 
 
 def new_stats():
-    return {"events_created": 0, "meet_entries_created": 0, "times_imported": 0,
-            "times_already_existed": 0, "would_import": 0}
+    return {
+        "events_created": 0,
+        "meet_entries_created": 0,
+        "times_imported": 0,
+        "times_already_existed": 0,
+        "would_import": 0,
+    }
 
 
 def run_import(db, results, meet_id, team=None, dry_run=False):
@@ -319,6 +373,7 @@ def test_import_results_dry_run_reports_already_imported(db, swimmer, meet):
 
 # --- main ------------------------------------------------------------------
 
+
 @pytest.fixture
 def run_main(db, session_factory, fake_pdfplumber, monkeypatch, capsys):
     fake_pdfplumber(imr, {"results.pdf": results_pages()})
@@ -328,6 +383,7 @@ def run_main(db, session_factory, fake_pdfplumber, monkeypatch, capsys):
         monkeypatch.setattr(sys, "argv", ["import_meet_results.py", "results.pdf", *args])
         imr.main()
         return capsys.readouterr().out
+
     return run
 
 

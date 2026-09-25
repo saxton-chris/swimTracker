@@ -51,6 +51,7 @@ from models import Course, Stroke
 # Shared helpers
 # ---------------------------------------------------------------------------
 
+
 def cluster_rows(words, tol=2.5):
     """Group words into rows by y-position ('top'), tolerating small jitter."""
     # Words are visited top-down and each row's anchor is more than `tol` below
@@ -114,6 +115,7 @@ def extract_season(page_text):
 # Result container
 # ---------------------------------------------------------------------------
 
+
 class ImportStats:
     def __init__(self):
         self.inserted = 0
@@ -140,7 +142,9 @@ def get_or_create_event(db, distance, stroke, course, stats):
     return event
 
 
-def store_standard(db, event, organization, age_group, gender, standard_name, standard_rank, time_seconds, season, stats):
+def store_standard(
+    db, event, organization, age_group, gender, standard_name, standard_rank, time_seconds, season, stats
+):
     existing = crud.get_time_standard(db, event.id, organization, age_group, gender, standard_name, season)
     if existing:
         stats.duplicates += 1
@@ -192,7 +196,8 @@ def import_usa_standards(db, pdf_path, stats):
                 texts = [w["text"] for w in row["words"]]
                 if "Girls" in texts and "Boys" in texts:
                     age_words = [
-                        w["text"] for w in sorted(row["words"], key=lambda w: w["x0"])
+                        w["text"]
+                        for w in sorted(row["words"], key=lambda w: w["x0"])
                         if w["x0"] < event_x0 and w["text"] != "Girls"
                     ]
                     current_age_group = clean_age_group(" ".join(age_words))
@@ -217,17 +222,25 @@ def import_usa_standards(db, pdf_path, stats):
                     t = parse_time(raw)
                     if t is None:
                         if raw.strip():  # non-empty but unparseable = a real problem; blank = no standard published
-                            stats.malformed.append(f"USA p{page.page_number} {current_age_group} Girls {evt_txt} {name}: {raw!r}")
+                            stats.malformed.append(
+                                f"USA p{page.page_number} {current_age_group} Girls {evt_txt} {name}: {raw!r}"
+                            )
                         continue
-                    store_standard(db, event, "USA Swimming", current_age_group, "F", name, USA_RANK[name], t, season, stats)
+                    store_standard(
+                        db, event, "USA Swimming", current_age_group, "F", name, USA_RANK[name], t, season, stats
+                    )
 
                 for name, raw in zip(USA_BOYS_ORDER, boys_vals):
                     t = parse_time(raw)
                     if t is None:
                         if raw.strip():
-                            stats.malformed.append(f"USA p{page.page_number} {current_age_group} Boys {evt_txt} {name}: {raw!r}")
+                            stats.malformed.append(
+                                f"USA p{page.page_number} {current_age_group} Boys {evt_txt} {name}: {raw!r}"
+                            )
                         continue
-                    store_standard(db, event, "USA Swimming", current_age_group, "M", name, USA_RANK[name], t, season, stats)
+                    store_standard(
+                        db, event, "USA Swimming", current_age_group, "M", name, USA_RANK[name], t, season, stats
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -247,8 +260,14 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
         words = page.extract_words()
 
         all_rows = cluster_rows(words)
-        legend_row = next((row for row in all_rows if "BRNZ" in [w["text"] for w in row["words"]]
-                            and "Girls" not in [w["text"] for w in row["words"]]), None)
+        legend_row = next(
+            (
+                row
+                for row in all_rows
+                if "BRNZ" in [w["text"] for w in row["words"]] and "Girls" not in [w["text"] for w in row["words"]]
+            ),
+            None,
+        )
         if legend_row is None:
             print(f"  WARNING: could not find the BRNZ/SLVR/GOLD/CH/ZONE legend row in {pdf_path} - skipping file")
             return
@@ -270,7 +289,8 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
             texts = [w["text"] for w in row["words"]]
             if "Girls" in texts and "Boys" in texts:
                 age_words = [
-                    w["text"] for w in sorted(row["words"], key=lambda w: w["x0"])
+                    w["text"]
+                    for w in sorted(row["words"], key=lambda w: w["x0"])
                     if w["x0"] < event_x0 and w["text"] != "Girls"
                 ]
                 current_age_group = clean_age_group(" ".join(age_words))
@@ -327,8 +347,10 @@ def main():
         for label, (kind, filename, course) in FILES.items():
             path = STANDARDS_DIR / filename
             if not path.exists():
-                print(f"SKIPPING {label}: file not found at {path} "
-                      f"(place it in {STANDARDS_DIR}, or edit the FILES dict at the bottom of the script)")
+                print(
+                    f"SKIPPING {label}: file not found at {path} "
+                    f"(place it in {STANDARDS_DIR}, or edit the FILES dict at the bottom of the script)"
+                )
                 continue
             stats = ImportStats()
             print(f"Importing {label} ...")

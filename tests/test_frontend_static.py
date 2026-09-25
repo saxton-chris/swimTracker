@@ -1,8 +1,10 @@
 """Browser-free consistency checks between the frontend's static files."""
+
 import re
 from pathlib import Path
 
 STATIC = Path(__file__).parent.parent / "app" / "static"
+
 
 def test_every_element_id_used_by_app_js_exists_in_index_html():
     js_source = (STATIC / "app.js").read_text(encoding="utf-8")
