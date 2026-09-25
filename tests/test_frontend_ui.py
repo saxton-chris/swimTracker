@@ -90,9 +90,11 @@ def seeded(db, swimmer, meet, swim_event, meet_entry):
 
 def test_renders_seeded_entries(page, seeded):
     open_app(page)
-    expect(page.locator("#entries-body tr")).to_have_count(2)
+    expect(page.locator("#entries-body tr.entry")).to_have_count(2)
+    # Both entries sit under a single heading row for their meet.
+    expect(page.locator("#entries-body tr.meet-heading")).to_have_text(["Winter Invite Jan 10, 2026"])
     adella = row(page, "entries", "Adella Barber")
-    for text in ("Winter Invite", "Jan 10, 2026", "50 FR SCY", "32.45", "PB"):
+    for text in ("50 FR SCY", "32.45", "PB"):
         expect(adella).to_contain_text(text)
     expect(adella.locator(".clock")).to_have_text("32.45")  # scoreboard-style time readout
     expect(adella.get_by_role("button", name="Edit")).to_be_visible()
@@ -309,17 +311,37 @@ def test_meet_end_before_start_shows_error_and_saves_nothing(page):
 
 
 def test_entries_show_multi_day_meet_range(page, db, meet_entry, meet):
-    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11), location="Edina"))
     open_app(page)
-    cell = row(page, "entries", "Adella Barber").locator("td.c-date")
-    assert normalize_spaces(cell.inner_text()) == "Jan 10 – 11, 2026"
+    dates = page.locator("#entries-body tr.meet-heading .meet-dates")
+    assert normalize_spaces(dates.inner_text()) == "Jan 10 – 11, 2026"
+    expect(page.locator("#entries-body tr.meet-heading .meet-location")).to_have_text("Edina")
 
 
-def test_meets_sorted_newest_first(page, db):
-    for name, d in [("Old", date(2025, 1, 1)), ("New", date(2026, 6, 1)), ("Mid", date(2025, 9, 1))]:
-        crud.create_meet(db, schemas.MeetCreate(name=name, date=d))
+def test_meets_sorted_oldest_first_by_start_date(page, db, swimmer):
+    # "Mid" starts before "Late" but ends after it: the start date decides.
+    for name, start, end in [
+        ("New", date(2026, 6, 1), None),
+        ("Late", date(2025, 9, 5), None),
+        ("Old", date(2025, 1, 1), None),
+        ("Mid", date(2025, 9, 1), date(2025, 9, 10)),
+    ]:
+        crud.create_meet(db, schemas.MeetCreate(name=name, date=start, end_date=end))
+    expected = ["Old", "Mid", "Late", "New"]
+
     open_app(page, "meets")
-    expect(page.locator("#meets-body tr td:nth-child(2)")).to_have_text(["New", "Mid", "Old"])
+    expect(page.locator("#meets-body tr td:nth-child(2)")).to_have_text(expected)
+
+    page.get_by_role("tab", name="Entries & Results").click()
+    options = page.locator("#filter-meet option").all_inner_texts()[1:]  # skip "All meets"
+    assert [o.split(" (")[0] for o in options] == expected
+
+    # New entries and imports still default to the most recent meet.
+    page.get_by_role("button", name="+ Add entry").click()
+    expect(page.locator("#entry-form [name=meet_id] option:checked")).to_contain_text("New")
+    page.locator("#entry-form .cancel").click()
+    page.get_by_role("button", name="Import results").click()
+    expect(page.locator("#import-form [name=meet_id] option:checked")).to_contain_text("New")
 
 
 def test_delete_meet_cascades_after_warning(page, seeded, confirms):
@@ -361,22 +383,26 @@ def two_meets(db, seeded):
 
 def test_filters(page, two_meets):
     open_app(page)
-    expect(page.locator("#entries-body tr")).to_have_count(3)
-    # newest meet first
-    expect(page.locator("#entries-body tr").first).to_contain_text("Spring Champs")
+    expect(page.locator("#entries-body tr.entry")).to_have_count(3)
+    # One heading per meet, oldest first: Winter Invite (Jan 10) before Spring Champs (Mar 1),
+    # each followed by its own entries.
+    headings = page.locator("#entries-body tr.meet-heading .meet-name")
+    expect(headings).to_have_text(["Winter Invite", "Spring Champs"])
+    kinds = page.locator("#entries-body tr").evaluate_all("rows => rows.map(r => r.className)")
+    assert kinds == ["meet-heading", "entry", "entry", "meet-heading", "entry"]
 
     page.select_option("#filter-meet", str(two_meets.meet_id))
-    expect(page.locator("#entries-body tr")).to_have_count(2)
+    expect(page.locator("#entries-body tr.entry")).to_have_count(2)
 
     page.select_option("#filter-swimmer", str(two_meets.ben_id))
-    expect(page.locator("#entries-body tr")).to_have_count(1)
+    expect(page.locator("#entries-body tr.entry")).to_have_count(1)
 
     page.select_option("#filter-meet", "")
-    expect(page.locator("#entries-body tr")).to_have_count(2)  # Ben at both meets
+    expect(page.locator("#entries-body tr.entry")).to_have_count(2)  # Ben at both meets
 
     page.select_option("#filter-meet", str(two_meets.other_meet_id))
     page.select_option("#filter-swimmer", str(two_meets.adella_id))
-    expect(page.locator("#entries-body tr")).to_have_count(0)
+    expect(page.locator("#entries-body tr")).to_have_count(0)  # no empty meet headings either
     expect(page.locator("#entries-empty")).to_have_text("No entries match these filters.")
 
 
@@ -385,13 +411,13 @@ def test_clicking_meet_or_swimmer_name_filters_entries(page, two_meets):
     row(page, "meets", "Spring Champs").get_by_role("button", name="Spring Champs").click()
     expect(page.locator("#view-entries")).to_be_visible()
     expect(page.locator("#filter-meet")).to_have_value(str(two_meets.other_meet_id))
-    expect(page.locator("#entries-body tr")).to_have_count(1)
+    expect(page.locator("#entries-body tr.entry")).to_have_count(1)
 
     page.get_by_role("tab", name="Swimmers").click()
     row(page, "swimmers", "Adella Barber").get_by_role("button", name="Adella Barber").click()
     expect(page.locator("#filter-meet")).to_have_value("")  # swimmer link clears the meet filter
     expect(page.locator("#filter-swimmer")).to_have_value(str(two_meets.adella_id))
-    expect(page.locator("#entries-body tr")).to_have_count(1)
+    expect(page.locator("#entries-body tr.entry")).to_have_count(1)
 
 
 # --- entries: add ------------------------------------------------------------

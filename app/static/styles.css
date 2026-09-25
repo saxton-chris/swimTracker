@@ -182,6 +182,30 @@ th {
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--row-hover); }
 td.notes { white-space: normal; min-width: 120px; max-width: 280px; color: var(--muted); }
+/* Entries: notes take whatever width the other (nowrap) columns leave. */
+#view-entries td.notes { width: 100%; max-width: none; }
+
+/* Entries are grouped under one heading row per meet. */
+tbody tr.meet-heading th {
+  padding: 18px 14px 8px;
+  background: var(--bg);
+  border-left: 4px solid var(--orange);
+  color: var(--text);
+  font: 700 1.2rem/1.2 var(--font-display);
+  letter-spacing: 0.01em;
+  white-space: normal;
+}
+tbody tr.meet-heading:hover { background: none; }
+.meet-heading .meet-dates,
+.meet-heading .meet-location {
+  display: inline-block;
+  margin-left: 14px;
+  font: 500 0.95rem/1.2 var(--font-body);
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.meet-heading .meet-location { margin-left: 6px; }
+.meet-heading .meet-location::before { content: "· "; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 td.actions { text-align: right; }
 td.pending { color: var(--muted); }
@@ -271,25 +295,28 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top
 
   /* Entries: each row becomes a stacked result with the time on the right. */
   #view-entries thead { display: none; }
-  #view-entries tbody tr {
+  #view-entries tbody tr.entry {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
       "swimmer time"
       "event   time"
-      "meet    date"
       "notes   actions";
     column-gap: 12px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border);
   }
   #view-entries tbody tr:last-child { border-bottom: none; }
+  #view-entries tbody tr.meet-heading,
+  #view-entries tbody tr.meet-heading th { display: block; }
+  #view-entries tbody tr.meet-heading th { padding: 14px 14px 8px; border-bottom: 1px solid var(--border); }
+  .meet-heading .meet-dates,
+  .meet-heading .meet-location { display: block; margin: 2px 0 0; }
+  .meet-heading .meet-location::before { content: none; }
   #view-entries td { padding: 0; border: none; white-space: normal; }
   #view-entries td.c-swimmer { grid-area: swimmer; font-weight: 600; }
   #view-entries td.c-event { grid-area: event; color: var(--muted); }
   #view-entries td.c-time { grid-area: time; align-self: center; }
-  #view-entries td.c-meet { grid-area: meet; margin-top: 6px; font-size: 0.9rem; }
-  #view-entries td.c-date { grid-area: date; margin-top: 6px; font-size: 0.9rem; color: var(--muted); text-align: right; }
-  #view-entries td.c-notes { display: block; grid-area: notes; align-self: center; font-size: 0.9rem; }
+  #view-entries td.c-notes { display: block; grid-area: notes; align-self: center; font-size: 0.9rem; width: auto; }
   #view-entries td.actions { grid-area: actions; margin-top: 4px; }
 }
