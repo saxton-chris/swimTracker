@@ -6,7 +6,7 @@ import { groupToggle, hiddenCount, storedSet } from "../collapse.js";
 import { setupDialog } from "../dialog.js";
 import { actionButton, el, fillSelect } from "../dom.js";
 import { ageAt, blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
-import { drawProgressChart, progressSummary } from "../progress-chart.js";
+import { drawProgressChart, progressPoints, progressSummary } from "../progress-chart.js";
 import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
 import { STROKE_ORDER, byId, mutate, newestMeet, state } from "../store.js";
 import { showView } from "../tabs.js";
@@ -225,6 +225,27 @@ function entryRow(row, standard) {
 // Progress chart (click an event name)
 // ---------------------------------------------------------------------------
 
+/**
+ * The chosen standard's tiers for this swimmer and event, for their age at the latest charted meet:
+ * {label, age, ageGroup, tiers} (tiers null if the set has none), or null for no standard or a relay.
+ */
+async function chartStandard(swimmer, event) {
+  const key = document.getElementById("entries-standard").value;
+  const { points } = progressPoints(swimmer.id, event.id);
+  if (!key || event.relay || !points.length) return null;
+  const set = state.standardSets.find((s) => setKey(s) === key);
+  try {
+    await loadSet(set);
+  } catch {
+    return null; // the table's own load of the set reports the failure
+  }
+  const standard = indexSet(key);
+  const age = ageAt(swimmer.birthdate, points.at(-1).date);
+  const ageGroup = ageGroupFor(standard.ageGroups, age);
+  const tiers = ageGroup ? (standard.tiers.get(`${event.id}|${swimmer.gender}|${ageGroup}`) ?? null) : null;
+  return { label: setLabel(set), age, ageGroup, tiers };
+}
+
 async function openProgressChart(swimmer, event) {
   const dialog = document.getElementById("chart-dialog");
   document.getElementById("chart-title").textContent = `${swimmer.name} · ${event.name}`;
@@ -232,9 +253,10 @@ async function openProgressChart(swimmer, event) {
   summary.textContent = "Loading…";
   dialog.showModal();
   try {
+    const standard = await chartStandard(swimmer, event);
     const { points, dqs } = await drawProgressChart(
-      document.getElementById("chart"), document.getElementById("chart-empty"), swimmer.id, event);
-    summary.textContent = progressSummary(points, dqs);
+      document.getElementById("chart"), document.getElementById("chart-empty"), swimmer.id, event, standard);
+    summary.textContent = progressSummary(points, dqs, standard);
   } catch (err) {
     dialog.close();
     toast(err.message, true);

@@ -381,6 +381,20 @@ def test_time_ticks_single_result_gets_at_least_a_second(js):
     assert 3 <= len(ticks["values"]) <= 7
 
 
+@pytest.mark.parametrize(
+    "best, expected",
+    [
+        (36.0, ["B"]),  # nothing reached yet: just the first tier
+        (35.19, ["B", "BB"]),  # exactly on the cut counts as reached
+        (32.45, ["B", "BB", "A"]),  # reached B and BB, A is next
+        (29.5, ["B", "BB", "A"]),  # past the top tier
+    ],
+)
+def test_standard_lines(js, best, expected):
+    got = call(js, "standardLines", TIERS, best)["ok"]
+    assert [t["name"] for t in got] == expected
+
+
 def test_progress_points_skip_dqs_and_untimed_and_sort_by_date(js):
     result = js.evaluate(
         """() => {
