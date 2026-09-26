@@ -1306,6 +1306,77 @@ def test_chart_with_only_dqs_says_so(page, db, seeded):
     expect(page.locator("#chart-summary")).to_have_text("1 DQ not shown")
 
 
+def chart_standard_lines(page):
+    return page.evaluate(
+        """() => {
+            const layout = document.getElementById('chart').layout;
+            return { y: (layout.shapes || []).map((s) => s.y0), labels: (layout.annotations || []).map((a) => a.text) };
+        }"""
+    )
+
+
+def test_chart_shows_reached_standards_and_the_next_one(page, progression, entry_standards):
+    open_app(page)
+    compare_to(page, "USA Swimming (2024-2028)")
+    open_chart(page)
+    # Best is 31.80 at 12 (11-12): B and BB reached, A next. No lines past A.
+    expect(page.locator("#chart-summary")).to_contain_text("vs USA Swimming (2024-2028) 11-12")
+    lines = chart_standard_lines(page)
+    assert lines == {"y": [35.19, 32.59, 30.09], "labels": ["B 35.19", "BB 32.59", "A 30.09 (next)"]}
+    y_range = page.evaluate("() => document.getElementById('chart').layout.yaxis.range")
+    assert y_range[0] > 35.19 and y_range[1] < 30.09  # every line is inside the axis
+
+    page.get_by_role("button", name="Close").click()
+    compare_to(page, "MN Swimming (2025-2026)")
+    open_chart(page)
+    expect(page.locator("#chart-summary")).to_contain_text("vs MN Swimming (2025-2026) 11-12")
+    page.wait_for_function("document.getElementById('chart').layout.shapes.length === 2")
+    assert chart_standard_lines(page)["labels"] == ["SLVR 35.39", "GOLD 31.19 (next)"]
+
+
+def test_chart_standard_labels_fit_inside_the_chart(page, db, swimmer, meet):
+    """Minute-long times make long labels ("GOLD 1:21.89 (next)"); none may be cut off at the right edge."""
+    hundred = crud.create_event(db, schemas.EventCreate(distance=100, stroke="FR", course="SCY"))
+    entry = crud.create_meet_entry(
+        db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=swimmer.id, event_id=hundred.id)
+    )
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=92.12))
+    for tier, rank, secs in (("BRNZ", 1, 107.89), ("SLVR", 2, 92.99), ("GOLD", 3, 81.89)):
+        crud.create_time_standard(
+            db,
+            schemas.TimeStandardCreate(
+                event_id=hundred.id, organization="MN Swimming", season="2025-2026", age_group="11-12",
+                gender="F", standard_name=tier, standard_rank=rank, time_seconds=secs,
+            ),
+        )  # fmt: skip
+    page.set_viewport_size({"width": 900, "height": 800})
+    open_app(page)
+    compare_to(page, "MN Swimming (2025-2026)")
+    row(page, "entries", "100 FR SCY").locator("button.event-link").click()
+    labels = page.locator("#chart .annotation")
+    expect(labels).to_have_count(3)
+    expect(labels.last).to_contain_text("GOLD 1:21.89 (next)")
+    chart_right = page.locator("#chart .main-svg").first.bounding_box()
+    for box in (labels.nth(i).bounding_box() for i in range(3)):
+        assert box["x"] + box["width"] <= chart_right["x"] + chart_right["width"]
+
+
+def test_chart_has_no_standard_lines_without_a_standard(page, progression, entry_standards):
+    open_app(page)
+    open_chart(page)
+    assert chart_standard_lines(page) == {"y": [], "labels": []}
+    expect(page.locator("#chart-summary")).not_to_contain_text("vs")
+
+
+def test_chart_says_when_the_standard_has_no_times_for_the_swimmer(page, db, entry_standards):
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry_standards.ben_entry_id, time_seconds=33.0))
+    open_app(page)
+    compare_to(page, "USA Swimming (2024-2028)")
+    open_chart(page, swimmer="Ben Cho")  # the standards are Girls only
+    expect(page.locator("#chart-summary")).to_contain_text("no USA Swimming (2024-2028) standard for 13-14")
+    assert chart_standard_lines(page) == {"y": [], "labels": []}
+
+
 def test_relay_chart_hover_includes_leg_and_split(page, db, swimmer, meet):
     relay = crud.create_event(db, schemas.EventCreate(distance=200, stroke="IM", course="LCM", relay=True))
     entry = crud.create_meet_entry(
