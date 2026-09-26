@@ -15,6 +15,7 @@
     <h1>Swim Tracker</h1>
     <nav class="tabs" role="tablist">
       <button type="button" class="tab" role="tab" id="tab-entries" aria-controls="view-entries" data-view="entries">Entries &amp; Results</button>
+      <button type="button" class="tab" role="tab" id="tab-prs" aria-controls="view-prs" data-view="prs">PRs</button>
       <button type="button" class="tab" role="tab" id="tab-swimmers" aria-controls="view-swimmers" data-view="swimmers">Swimmers</button>
       <button type="button" class="tab" role="tab" id="tab-meets" aria-controls="view-meets" data-view="meets">Meets</button>
       <button type="button" class="tab" role="tab" id="tab-standards" aria-controls="view-standards" data-view="standards">Time Standards</button>
@@ -49,6 +50,26 @@
         </table>
       </div>
       <p class="empty" id="entries-empty" hidden></p>
+    </section>
+
+    <!-- Personal records ------------------------------------------------ -->
+    <section id="view-prs" class="view" role="tabpanel" aria-labelledby="tab-prs" hidden>
+      <div class="toolbar">
+        <label>Swimmer
+          <select id="pr-swimmer" required>
+            <option value="" disabled selected>Select a swimmer…</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap" id="prs-table" hidden>
+        <table>
+          <thead>
+            <tr><th>Event</th><th>Time</th><th>Meet</th></tr>
+          </thead>
+          <tbody id="prs-body"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="prs-empty">Select a swimmer to see their personal records.</p>
     </section>
 
     <!-- Swimmers --------------------------------------------------------- -->

@@ -1,4 +1,4 @@
-export const VIEWS = ["entries", "swimmers", "meets", "standards"];
+export const VIEWS = ["entries", "prs", "swimmers", "meets", "standards"];
 
 const tabs = () => [...document.querySelectorAll(".tab")];
 

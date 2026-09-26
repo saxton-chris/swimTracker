@@ -7,6 +7,7 @@ import { setupDialog } from "../dialog.js";
 import { actionButton, el, fillSelect } from "../dom.js";
 import { ageAt, blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
 import { drawProgressChart, progressPoints, progressSummary } from "../progress-chart.js";
+import { prEntryIds } from "../prs.js";
 import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
 import { STROKE_ORDER, byId, mutate, newestMeet, state } from "../store.js";
 import { showView } from "../tabs.js";
@@ -118,6 +119,7 @@ export function renderEntries() {
   const swimmers = byId(state.swimmers);
   const events = byId(state.events);
   const timeByEntry = new Map(state.times.map((t) => [t.meet_entry_id, t]));
+  const prIds = prEntryIds();
 
   const meetId = Number(meetFilter.value) || null;
   const swimmerId = Number(swimmerFilter.value) || null;
@@ -152,7 +154,7 @@ export function renderEntries() {
   for (const { meet, rows: meetRows } of groups) {
     const collapsed = collapsedMeets.has(meet.id);
     tableRows.push(meetHeading(meet, meetRows.length, collapsed));
-    if (!collapsed) tableRows.push(...meetRows.map((r) => entryRow(r, standard)));
+    if (!collapsed) tableRows.push(...meetRows.map((r) => entryRow(r, standard, prIds.has(r.entry.id))));
   }
   document.getElementById("entries-body").replaceChildren(...tableRows);
 
@@ -185,7 +187,7 @@ function relayDetail(time) {
   return parts.join(" · ");
 }
 
-function timeCell(time) {
+function timeCell(time, event, isPr) {
   if (!time) return el("td", { class: "c-time pending", textContent: "—" });
   if (time.dq) {
     // A DQ'd swim's time (if the results printed one) isn't official, so it's shown small and muted.
@@ -193,10 +195,12 @@ function timeCell(time) {
       el("span", { class: "dq-badge", textContent: "DQ", title: time.dq_reason || "Disqualified" }),
       time.time_seconds != null ? el("span", { class: "dq-time", textContent: formatTime(time.time_seconds) }) : null);
   }
-  return el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) }));
+  return el("td", { class: "c-time" },
+    el("span", { class: "clock", textContent: formatTime(time.time_seconds) }),
+    isPr ? el("span", { class: "pr-badge", textContent: "PR", title: `Personal record for ${event.name}` }) : null);
 }
 
-function entryRow(row, standard) {
+function entryRow(row, standard, isPr) {
   const { entry, meet, swimmer, event, time } = row;
   const detail = relayDetail(time);
   const notes = [time && time.dq && time.dq_reason ? `DQ: ${time.dq_reason}` : null, time && time.notes]
@@ -212,7 +216,7 @@ function entryRow(row, standard) {
         onclick: () => openProgressChart(swimmer, event),
       }),
       detail ? el("span", { class: "relay-detail", textContent: detail }) : null),
-    timeCell(time),
+    timeCell(time, event, isPr),
     standingCell(standard, row),
     el("td", { class: "notes c-notes", textContent: notes }),
     el("td", { class: "actions" },
@@ -246,7 +250,7 @@ async function chartStandard(swimmer, event) {
   return { label: setLabel(set), age, ageGroup, tiers };
 }
 
-async function openProgressChart(swimmer, event) {
+export async function openProgressChart(swimmer, event) {
   const dialog = document.getElementById("chart-dialog");
   document.getElementById("chart-title").textContent = `${swimmer.name} · ${event.name}`;
   const summary = document.getElementById("chart-summary");
