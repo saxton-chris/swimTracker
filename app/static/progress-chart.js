@@ -24,7 +24,8 @@ export function loadPlotly() {
 }
 
 /**
- * The points to chart: this swimmer's timed results in this event, oldest meet first.
+ * The points to chart: this swimmer's timed results in this event, oldest first (on the day swum,
+ * if the entry has one, else the meet's first day).
  * DQs and entries without a time are left out. Also returns how many DQs were skipped.
  */
 export function progressPoints(swimmerId, eventId) {
@@ -41,7 +42,7 @@ export function progressPoints(swimmerId, eventId) {
       continue;
     }
     const meet = meets.get(entry.meet_id);
-    points.push({ date: meet.date, meet: meet.name, seconds: time.time_seconds, leg: time.relay_leg, split: time.split_seconds });
+    points.push({ date: entry.swim_date ?? meet.date, meet: meet.name, seconds: time.time_seconds, leg: time.relay_leg, split: time.split_seconds });
   }
   points.sort((a, b) => a.date.localeCompare(b.date) || a.meet.localeCompare(b.meet));
   return { points, dqs };

@@ -347,6 +347,22 @@ td.pending { color: var(--muted); }
   font-variant-numeric: tabular-nums;
   text-decoration: line-through;
 }
+/* Personal record: a small purple tag beside the clock. */
+.pr-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px 1px;
+  border-radius: 3px;
+  background: var(--purple);
+  color: #ffffff;
+  font: 700 0.85rem/1.15 var(--font-display);
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+}
+/* PRs tab: the meet's dates under its name. */
+.pr-date { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
+#prs-table td.c-meet { width: 100%; white-space: normal; }
+
 /* Standard column (Entries, when "Compare to standard" is set): tier reached + gap to the next. */
 #entries-table:not(.show-standing) .c-standing { display: none; }
 .std-badge {
@@ -364,7 +380,8 @@ td.pending { color: var(--muted); }
 .std-next { display: block; margin-top: 3px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Relay leg and split, under the event name. */
-.relay-detail { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
+.relay-detail,
+.swim-day { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
 
 .empty { color: var(--muted); text-align: center; padding: 28px 16px; }
 
@@ -450,6 +467,8 @@ button.link.event-link { padding-left: 0; text-align: left; font-weight: 500; }
     background: var(--surface);
     box-shadow: 1px 0 0 var(--border);
   }
+
+  #view-prs td.c-time .clock { min-width: 0; }
 
   /* Swimmers / meets: drop the low-priority columns so actions stay on screen. */
   .c-birthdate, .c-notes, .c-location { display: none; }

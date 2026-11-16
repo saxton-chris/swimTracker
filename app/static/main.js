@@ -3,6 +3,7 @@
 // Module layout:
 //   api.js, format.js, dom.js, toast.js   helpers with no app state
 //   store.js     the loaded data, refresh() and mutate()
+//   prs.js       personal records (fastest time per swimmer and event)
 //   dialog.js    <dialog> form plumbing
 //   collapse.js  collapsible group headings (meets, age groups)
 //   tabs.js      which tab is showing
@@ -13,6 +14,7 @@ import { initTabs, showView } from "./tabs.js";
 import { renderEntries } from "./views/entries.js";
 import "./views/import.js";
 import { renderMeets } from "./views/meets.js";
+import { renderPrs } from "./views/prs.js";
 import { renderStandards } from "./views/standards.js";
 import { renderSwimmers } from "./views/swimmers.js";
 
@@ -20,6 +22,7 @@ import { renderSwimmers } from "./views/swimmers.js";
 onRefresh(renderSwimmers);
 onRefresh(renderMeets);
 onRefresh(renderEntries);
+onRefresh(renderPrs);
 onRefresh(renderStandards);
 
 initTabs();

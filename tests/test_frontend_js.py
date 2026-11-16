@@ -21,6 +21,7 @@ TESTED_MODULES = [
     "store.js",
     "standards-data.js",
     "progress-chart.js",
+    "prs.js",
     "views/import.js",
 ]
 
@@ -151,6 +152,23 @@ def test_format_meet_dates(js, start, end, expected):
     text = js.evaluate("([date, end_date]) => formatMeetDates({ date, end_date })", [start, end])
     # Intl.formatRange uses thin/narrow no-break spaces around the dash
     assert text.replace(" ", " ").replace(" ", " ") == expected
+
+
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [
+        ("2026-01-10", None, ["2026-01-10"]),
+        ("2026-01-10", "2026-01-10", ["2026-01-10"]),
+        ("2026-01-30", "2026-02-01", ["2026-01-30", "2026-01-31", "2026-02-01"]),
+        ("2026-03-07", "2026-03-09", ["2026-03-07", "2026-03-08", "2026-03-09"]),  # across the DST change
+    ],
+)
+def test_meet_days(js, start, end, expected):
+    assert js.evaluate("([date, end_date]) => meetDays({ date, end_date })", [start, end]) == expected
+
+
+def test_format_day(js):
+    assert js.evaluate("formatDay('2026-01-10')") == "Sat, Jan 10"
 
 
 @pytest.mark.parametrize(
@@ -421,3 +439,39 @@ def test_progress_points_skip_dqs_and_untimed_and_sort_by_date(js):
         "dqs": 1,
         "summary": "2 swims · best 31.00 at Late (Mar 1, 2026) · 1 DQ not shown",
     }
+
+
+# --- personalRecords ---------------------------------------------------------
+
+
+def test_personal_records_take_the_fastest_official_individual_swim(js):
+    result = js.evaluate(
+        """() => {
+            const saved = { ...state };
+            Object.assign(state, {
+                meets: [{ id: 1, name: "Early", date: "2025-10-01" }, { id: 2, name: "Late", date: "2026-03-01" },
+                        { id: 3, name: "Mid", date: "2026-01-10" }],
+                events: [{ id: 5, relay: false }, { id: 6, relay: false }, { id: 9, relay: true }],
+                entries: [{ id: 10, meet_id: 1, swimmer_id: 7, event_id: 5 },   // 31.0
+                          { id: 11, meet_id: 2, swimmer_id: 7, event_id: 5 },   // 30.0: the PR
+                          { id: 12, meet_id: 3, swimmer_id: 7, event_id: 5 },   // faster, but a DQ
+                          { id: 13, meet_id: 3, swimmer_id: 7, event_id: 5 },   // no result yet
+                          { id: 20, meet_id: 2, swimmer_id: 7, event_id: 6 },   // tie: the earlier meet
+                          { id: 21, meet_id: 1, swimmer_id: 7, event_id: 6 },   //   (Early) holds it
+                          { id: 30, meet_id: 1, swimmer_id: 8, event_id: 5 },   // another swimmer's own PR
+                          { id: 40, meet_id: 1, swimmer_id: 7, event_id: 9 }],  // relay: never a PR
+                times: [{ meet_entry_id: 10, time_seconds: 31.0, dq: false }, { meet_entry_id: 11, time_seconds: 30.0, dq: false },
+                        { meet_entry_id: 12, time_seconds: 29.0, dq: true }, { meet_entry_id: 20, time_seconds: 40.0, dq: false },
+                        { meet_entry_id: 21, time_seconds: 40.0, dq: false }, { meet_entry_id: 30, time_seconds: 35.0, dq: false },
+                        { meet_entry_id: 40, time_seconds: 20.0, dq: false }],
+            });
+            try {
+                const prs = personalRecords();
+                return {
+                    keys: [...prs.keys()].sort(),
+                    entries: [...prEntryIds(prs)].sort((a, b) => a - b),
+                };
+            } finally { Object.assign(state, saved); }
+        }"""
+    )
+    assert result == {"keys": ["7|5", "7|6", "8|5"], "entries": [11, 21, 30]}

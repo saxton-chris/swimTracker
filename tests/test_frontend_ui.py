@@ -321,6 +321,33 @@ def test_entries_show_multi_day_meet_range(page, db, meet_entry, meet):
     expect(page.locator("#entries-body tr.meet-heading .meet-location")).to_have_text("Edina")
 
 
+def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event):
+    one_day = crud.create_meet(db, schemas.MeetCreate(name="Dual", date=date(2026, 2, 7)))
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    open_app(page)
+    page.locator("#add-entry").click()
+    day_field = page.locator("#swim-date-field")
+
+    fill(page, "entry-form", meet_id=one_day.id)
+    expect(day_field).to_be_hidden()
+    fill(page, "entry-form", meet_id=meet.id)
+    expect(day_field).to_be_visible()
+    days = page.locator("#entry-form [name=swim_date] option")
+    expect(days).to_have_text(["Not recorded", "Sat, Jan 10", "Sun, Jan 11"])
+
+    save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, swim_date="2026-01-11", time="33.10")
+    [entry] = api(page, "/meet_entries/")
+    assert entry["swim_date"] == "2026-01-11"
+    expect(row(page, "entries", swimmer.name).locator(".swim-day")).to_have_text("Sun, Jan 11")
+
+    # Editing prefills the day; moving the entry to a one-day meet clears it
+    click_row_button(page, "entries", swimmer.name, "Edit")
+    expect(page.locator("#entry-form [name=swim_date]")).to_have_value("2026-01-11")
+    save(page, "entry-dialog", "entry-form", meet_id=one_day.id)
+    [entry] = api(page, "/meet_entries/")
+    assert (entry["meet_id"], entry["swim_date"]) == (one_day.id, None)
+
+
 def test_meets_sorted_oldest_first_by_start_date(page, db, swimmer):
     # "Mid" starts before "Late" but ends after it: the start date decides.
     for name, start, end in [
@@ -1389,3 +1416,93 @@ def test_relay_chart_hover_includes_leg_and_split(page, db, swimmer, meet):
     row(page, "entries", "200 MED-R LCM").locator("button.event-link").click()
     page.wait_for_function("document.getElementById('chart').data !== undefined")
     hover(page, 0, "Time: 3:04.99", "Leg 4", "split 41.94")
+
+
+# --- personal records ------------------------------------------------------------
+
+
+def test_entries_mark_each_swimmers_pr(page, progression):
+    open_app(page)
+    badges = page.locator("#entries-body tr.entry").filter(has=page.locator(".pr-badge"))
+    # 31.80 (Summer) beats 34.10 and 32.45; the faster Spring Sprint swim was a DQ. Ben has no time.
+    expect(badges).to_have_count(1)
+    expect(badges.locator(".clock")).to_have_text("31.80")
+    expect(badges.locator(".pr-badge")).to_have_attribute("title", "Personal record for 50 FR SCY")
+
+
+def test_relays_are_not_prs(page, db, swimmer, meet):
+    relay = crud.create_event(db, schemas.EventCreate(distance=200, stroke="FR", course="SCY", relay=True))
+    entry = crud.create_meet_entry(
+        db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=swimmer.id, event_id=relay.id)
+    )
+    crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=130.5))
+    open_app(page)
+    expect(row(page, "entries", "200 FR-R SCY").locator(".clock")).to_have_text("2:10.50")
+    expect(page.locator("#entries-body .pr-badge")).to_have_count(0)
+
+
+def pick_pr_swimmer(page, name):
+    page.select_option("#pr-swimmer", label=name)
+
+
+def test_prs_tab_waits_for_a_swimmer(page, progression):
+    open_app(page, "prs")
+    select = page.locator("#pr-swimmer")
+    expect(select).to_have_value("")
+    expect(select.locator("option")).to_have_text(["Select a swimmer…", "Adella Barber", "Ben Cho"])
+    assert select.locator("option").first.evaluate("o => o.disabled")
+    expect(page.locator("#prs-table")).to_be_hidden()
+    expect(page.locator("#prs-empty")).to_have_text("Select a swimmer to see their personal records.")
+
+    pick_pr_swimmer(page, "Ben Cho")  # entered, but no time yet
+    expect(page.locator("#prs-table")).to_be_hidden()
+    expect(page.locator("#prs-empty")).to_have_text("No timed individual swims for Ben Cho yet.")
+
+
+def test_prs_tab_lists_a_swimmers_prs_by_course(page, db, progression, meet):
+    def add(distance, stroke, course, seconds):
+        event = crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course))
+        entry = crud.create_meet_entry(
+            db, schemas.MeetEntryCreate(meet_id=meet.id, swimmer_id=progression.adella_id, event_id=event.id)
+        )
+        crud.create_swim_time(db, schemas.SwimTimeCreate(meet_entry_id=entry.id, time_seconds=seconds))
+
+    add(50, "FR", "LCM", 36.2)
+    add(100, "BK", "SCY", 75.5)
+    open_app(page, "prs")
+    pick_pr_swimmer(page, "Adella Barber")
+
+    expect(page.locator("#prs-body tr.course-heading")).to_have_text(["Short course yards", "Long course meters"])
+    prs = page.locator("#prs-body tr.pr")
+    expect(prs.locator("td.c-event")).to_have_text(["50 FR SCY", "100 BK SCY", "50 FR LCM"])
+    expect(prs.locator(".clock")).to_have_text(["31.80", "1:15.50", "36.20"])
+    expect(prs.first.locator("td.c-meet")).to_have_text("Summer <Champs> & CoJun 1, 2026")
+
+    prs.first.locator("button.event-link").click()  # opens the same progress chart as Entries
+    expect(page.locator("#chart-title")).to_have_text("Adella Barber · 50 FR SCY")
+
+
+def test_prs_update_after_an_edit_and_swimmer_is_not_remembered(page, progression):
+    open_app(page, "prs")
+    pick_pr_swimmer(page, "Adella Barber")
+    expect(page.locator("#prs-body .clock")).to_have_text(["31.80"])
+
+    page.get_by_role("tab", name="Entries & Results").click()
+    row(page, "entries", "Adella Barber").filter(has_text="32.45").get_by_role("button", name="Edit").click()
+    save(page, "entry-dialog", "entry-form", time="30.99")
+    page.get_by_role("tab", name="PRs").click()
+    expect(page.locator("#pr-swimmer")).to_have_value(str(progression.adella_id))
+    expect(page.locator("#prs-body .clock")).to_have_text(["30.99"])
+
+    page.reload(wait_until="networkidle")
+    expect(page.locator("#pr-swimmer")).to_have_value("")
+    expect(page.locator("#prs-table")).to_be_hidden()
+
+
+def test_prs_tab_fits_a_phone(page, progression):
+    page.set_viewport_size({"width": 375, "height": 800})
+    open_app(page, "prs")
+    pick_pr_swimmer(page, "Adella Barber")
+    expect(page.locator("#prs-table")).to_be_visible()
+    overflow = page.evaluate("() => document.documentElement.scrollWidth - document.documentElement.clientWidth")
+    assert overflow <= 0

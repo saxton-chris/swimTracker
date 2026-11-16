@@ -174,7 +174,7 @@ def test_meet_entry_create(client, swimmer, meet, swim_event):
     payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id}
     r = client.post("/meet_entries/", json=payload)
     assert r.status_code == 200
-    assert r.json() == {**payload, "id": r.json()["id"]}
+    assert r.json() == {**payload, "swim_date": None, "id": r.json()["id"]}
 
     # duplicate
     assert client.post("/meet_entries/", json=payload).status_code == 400
@@ -252,6 +252,61 @@ def test_meet_entry_patch_would_duplicate(client, meet_entry, meet, swimmer):
 
 def test_meet_entry_patch_rejects_null(client, meet_entry):
     assert client.patch(f"/meet_entries/{meet_entry.id}", json={"meet_id": None}).status_code == 422
+
+
+@pytest.fixture
+def three_day_meet(client, meet):  # meet fixture: 2026-01-10, made Jan 10-12
+    client.patch(f"/meets/{meet.id}", json={"end_date": "2026-01-12"})
+    return meet
+
+
+@pytest.mark.parametrize("day", ["2026-01-10", "2026-01-11", "2026-01-12"])
+def test_meet_entry_swim_date_within_meet(client, swimmer, three_day_meet, swim_event, day):
+    payload = {"meet_id": three_day_meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id, "swim_date": day}
+    r = client.post("/meet_entries/", json=payload)
+    assert r.status_code == 200 and r.json()["swim_date"] == day
+
+
+@pytest.mark.parametrize("day", ["2026-01-09", "2026-01-13"])
+def test_meet_entry_swim_date_outside_meet(client, swimmer, three_day_meet, swim_event, day):
+    payload = {"meet_id": three_day_meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id, "swim_date": day}
+    r = client.post("/meet_entries/", json=payload)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "swim_date must be within the meet's dates"
+    assert client.get("/meet_entries/").json() == []
+
+
+def test_one_day_meet_swim_date_must_be_that_day(client, swimmer, meet, swim_event):
+    payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id}
+    assert client.post("/meet_entries/", json={**payload, "swim_date": "2026-01-11"}).status_code == 422
+    assert client.post("/meet_entries/", json={**payload, "swim_date": "2026-01-10"}).status_code == 200
+
+
+def test_meet_entry_patch_swim_date(client, meet_entry, three_day_meet):
+    url = f"/meet_entries/{meet_entry.id}"
+    r = client.patch(url, json={"swim_date": "2026-01-11"})
+    assert r.status_code == 200 and r.json()["swim_date"] == "2026-01-11"
+    assert client.patch(url, json={"swim_date": "2026-01-13"}).status_code == 422
+    r = client.patch(url, json={"swim_date": None})  # back to not recorded
+    assert r.status_code == 200 and r.json()["swim_date"] is None
+
+
+def test_meet_entry_patch_to_another_meet_checks_the_stored_day(client, meet_entry, three_day_meet):
+    client.patch(f"/meet_entries/{meet_entry.id}", json={"swim_date": "2026-01-11"})
+    other = client.post("/meets/", json={"name": "Other", "date": "2026-02-01"}).json()
+    r = client.patch(f"/meet_entries/{meet_entry.id}", json={"meet_id": other["id"]})
+    assert r.status_code == 422
+    r = client.patch(f"/meet_entries/{meet_entry.id}", json={"meet_id": other["id"], "swim_date": "2026-02-01"})
+    assert r.status_code == 200
+
+
+def test_meet_dates_cannot_strand_an_entry_day(client, meet_entry, three_day_meet):
+    client.patch(f"/meet_entries/{meet_entry.id}", json={"swim_date": "2026-01-12"})
+    r = client.patch(f"/meets/{three_day_meet.id}", json={"end_date": "2026-01-11"})
+    assert r.status_code == 400
+    assert r.json()["detail"] == ("1 entry is on days outside the new dates (2026-01-12); change their day first")
+    # Shrinking from the other end, or not touching that day, is fine
+    assert client.patch(f"/meets/{three_day_meet.id}", json={"date": "2026-01-11"}).status_code == 200
 
 
 # --- swim times ------------------------------------------------------------
