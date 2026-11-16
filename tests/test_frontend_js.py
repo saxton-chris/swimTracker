@@ -155,6 +155,23 @@ def test_format_meet_dates(js, start, end, expected):
 
 
 @pytest.mark.parametrize(
+    "start, end, expected",
+    [
+        ("2026-01-10", None, ["2026-01-10"]),
+        ("2026-01-10", "2026-01-10", ["2026-01-10"]),
+        ("2026-01-30", "2026-02-01", ["2026-01-30", "2026-01-31", "2026-02-01"]),
+        ("2026-03-07", "2026-03-09", ["2026-03-07", "2026-03-08", "2026-03-09"]),  # across the DST change
+    ],
+)
+def test_meet_days(js, start, end, expected):
+    assert js.evaluate("([date, end_date]) => meetDays({ date, end_date })", [start, end]) == expected
+
+
+def test_format_day(js):
+    assert js.evaluate("formatDay('2026-01-10')") == "Sat, Jan 10"
+
+
+@pytest.mark.parametrize(
     "on, expected",
     [
         # months are 0-based in JS: (2026, 4, 1) is May 1

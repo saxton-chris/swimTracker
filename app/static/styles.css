@@ -380,7 +380,8 @@ td.pending { color: var(--muted); }
 .std-next { display: block; margin-top: 3px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Relay leg and split, under the event name. */
-.relay-detail { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
+.relay-detail,
+.swim-day { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
 
 .empty { color: var(--muted); text-align: center; padding: 28px 16px; }
 

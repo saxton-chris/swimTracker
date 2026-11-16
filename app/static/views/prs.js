@@ -1,7 +1,7 @@
 // PRs tab: one swimmer's personal record in every individual event they've swum, grouped by course.
 
 import { el } from "../dom.js";
-import { formatMeetDates, formatTime } from "../format.js";
+import { formatDate, formatMeetDates, formatTime } from "../format.js";
 import { personalRecords } from "../prs.js";
 import { COURSE_ORDER, STROKE_ORDER, state } from "../store.js";
 import { openProgressChart } from "./entries.js";
@@ -55,7 +55,7 @@ export function renderPrs() {
   else empty.textContent = `No timed individual swims for ${swimmer.name} yet.`;
 }
 
-function prRow(swimmer, { event, time, meet }) {
+function prRow(swimmer, { entry, event, time, meet }) {
   return el("tr", { class: "pr" },
     el("td", { class: "c-event" },
       el("button", {
@@ -68,7 +68,8 @@ function prRow(swimmer, { event, time, meet }) {
     el("td", { class: "c-time" }, el("span", { class: "clock", textContent: formatTime(time.time_seconds) })),
     el("td", { class: "c-meet" },
       el("span", { class: "pr-meet", textContent: meet.name }),
-      el("span", { class: "pr-date", textContent: formatMeetDates(meet) })),
+      // The day it was swum if recorded, else the meet's dates
+      el("span", { class: "pr-date", textContent: entry.swim_date ? formatDate(entry.swim_date) : formatMeetDates(meet) })),
   );
 }
 

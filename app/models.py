@@ -45,9 +45,10 @@ class Meet(Base):
     # date_type alias: a bare `date` annotation here would resolve to this
     # column itself (Python 3.14 lazy annotations), not datetime.date.
     date: Mapped[date_type] = mapped_column(Date)  # first (or only) day of the meet
-    # Last day for multi-day meets; None for one-day meets. Results are attached
-    # to the meet as a whole (Hy-Tek results PDFs don't say which day an event
-    # was swum), and `date` is what age-based standards are keyed on.
+    # Last day for multi-day meets; None for one-day meets. Imported results are
+    # attached to the meet as a whole (Hy-Tek results PDFs don't say which day an
+    # event was swum; MeetEntry.swim_date can be set by hand), and `date` is what
+    # age-based standards are keyed on.
     end_date: Mapped[date_type | None] = mapped_column(Date, default=None)
     location: Mapped[str | None] = mapped_column(String(200), default=None)
 
@@ -92,6 +93,8 @@ class MeetEntry(Base):
     meet_id: Mapped[int] = mapped_column(ForeignKey("meets.id"))
     swimmer_id: Mapped[int] = mapped_column(ForeignKey("swimmers.id"))
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    # The day this event was swum, within the meet's date range; None if unknown.
+    swim_date: Mapped[date_type | None] = mapped_column(Date, default=None)
 
     meet: Mapped["Meet"] = relationship(back_populates="meet_entries")
     swimmer: Mapped["Swimmer"] = relationship(back_populates="meet_entries")

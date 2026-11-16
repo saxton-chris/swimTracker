@@ -41,6 +41,23 @@ export function formatMeetDates(meet) {
   return DATE_FORMAT.formatRange(localDate(meet.date), localDate(meet.end_date));
 }
 
+const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+/** ISO "2026-01-10" -> "Sat, Jan 10" (a day within a meet, whose year is already shown) */
+export function formatDay(iso) {
+  return DAY_FORMAT.format(localDate(iso));
+}
+
+/** A meet's days as ISO dates, first to last: one for a one-day meet. */
+export function meetDays(meet) {
+  const days = [];
+  const last = localDate(meet.end_date || meet.date);
+  for (const d = localDate(meet.date); d <= last; d.setDate(d.getDate() + 1)) {
+    days.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+  }
+  return days;
+}
+
 export function ageOn(birthIso, onDate = new Date()) {
   const [y, m, d] = birthIso.split("-").map(Number);
   let age = onDate.getFullYear() - y;

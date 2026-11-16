@@ -109,10 +109,17 @@ class EventOut(EventCreate):
     model_config = ConfigDict(from_attributes=True)
 
 
+def check_swim_date(swim_date: date_type | None, meet_date: date_type, meet_end_date: date_type | None):
+    """A meet entry's swim_date must fall within its meet's days. Used by the routers, which know the meet."""
+    if swim_date is not None and not meet_date <= swim_date <= (meet_end_date or meet_date):
+        raise ValueError("swim_date must be within the meet's dates")
+
+
 class MeetEntryCreate(BaseModel):
     meet_id: int
     swimmer_id: int
     event_id: int
+    swim_date: date_type | None = None  # the day it was swum, for multi-day meets
 
 
 class MeetEntryOut(MeetEntryCreate):
@@ -125,6 +132,7 @@ class MeetEntryUpdate(BaseModel):
     meet_id: int | None = None
     swimmer_id: int | None = None
     event_id: int | None = None
+    swim_date: date_type | None = None
 
     _not_null = field_validator("meet_id", "swimmer_id", "event_id")(_reject_null)
 

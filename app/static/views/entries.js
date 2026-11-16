@@ -5,7 +5,7 @@ import { api } from "../api.js";
 import { groupToggle, hiddenCount, storedSet } from "../collapse.js";
 import { setupDialog } from "../dialog.js";
 import { actionButton, el, fillSelect } from "../dom.js";
-import { ageAt, blankToNull, formatMeetDates, formatTime, parseTime } from "../format.js";
+import { ageAt, blankToNull, formatDay, formatMeetDates, formatTime, meetDays, parseTime } from "../format.js";
 import { drawProgressChart, progressPoints, progressSummary } from "../progress-chart.js";
 import { prEntryIds } from "../prs.js";
 import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
@@ -137,6 +137,7 @@ export function renderEntries() {
       a.meet.date.localeCompare(b.meet.date) ||
       a.meet.name.localeCompare(b.meet.name) ||
       a.swimmer.name.localeCompare(b.swimmer.name) ||
+      (a.entry.swim_date ?? "￿").localeCompare(b.entry.swim_date ?? "￿") || // by day; unknown day last
       a.event.course.localeCompare(b.event.course) ||
       Number(a.event.relay) - Number(b.event.relay) || // relays after individual events
       STROKE_ORDER[a.event.stroke] - STROKE_ORDER[b.event.stroke] ||
@@ -203,6 +204,7 @@ function timeCell(time, event, isPr) {
 function entryRow(row, standard, isPr) {
   const { entry, meet, swimmer, event, time } = row;
   const detail = relayDetail(time);
+  const day = entry.swim_date && meet.end_date && meet.end_date !== meet.date ? formatDay(entry.swim_date) : null;
   const notes = [time && time.dq && time.dq_reason ? `DQ: ${time.dq_reason}` : null, time && time.notes]
     .filter(Boolean).join(" · ");
   return el("tr", { class: time && time.dq ? "entry dq" : "entry" },
@@ -215,6 +217,7 @@ function entryRow(row, standard, isPr) {
         title: `${swimmer.name}'s ${event.name} over time`,
         onclick: () => openProgressChart(swimmer, event),
       }),
+      day ? el("span", { class: "swim-day", textContent: day }) : null,
       detail ? el("span", { class: "relay-detail", textContent: detail }) : null),
     timeCell(time, event, isPr),
     standingCell(standard, row),
@@ -311,6 +314,21 @@ function syncEntryForm() {
   document.getElementById("relay-fields").hidden = !relay;
   form.querySelector("[data-relay-text]").textContent = relay ? "Team time" : "Time";
   document.getElementById("dq-reason-field").hidden = !form.elements.dq.checked;
+  fillSwimDays(form);
+}
+
+/** Offer the chosen meet's days in the Day dropdown, shown only for a multi-day meet. Keeps the day if it still fits. */
+function fillSwimDays(form) {
+  const meet = state.meets.find((m) => m.id === Number(form.elements.meet_id.value));
+  const days = meet ? meetDays(meet) : [];
+  const select = form.elements.swim_date;
+  const current = select.value;
+  select.replaceChildren(
+    el("option", { value: "", textContent: "Not recorded" }),
+    ...days.map((d) => el("option", { value: d, textContent: formatDay(d) })),
+  );
+  select.value = days.length > 1 && days.includes(current) ? current : "";
+  document.getElementById("swim-date-field").hidden = days.length < 2;
 }
 
 {
@@ -338,7 +356,12 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
 
   const eventId = await resolveEventId(distance, f.stroke, f.course, relay);
   lastCourse = f.course;
-  const body = { meet_id: Number(f.meet_id), swimmer_id: Number(f.swimmer_id), event_id: eventId };
+  const body = {
+    meet_id: Number(f.meet_id),
+    swimmer_id: Number(f.swimmer_id),
+    event_id: eventId,
+    swim_date: f.swim_date || null,
+  };
 
   const isNew = !editingEntry;
   const entry = isNew
@@ -376,6 +399,9 @@ function openEntryDialog(entry = null) {
   const form = document.getElementById("entry-form");
   fillSelect(form.elements.meet_id, state.meets, (m) => `${m.name} (${m.date})`);
   fillSelect(form.elements.swimmer_id, state.swimmers, (s) => s.name);
+  // The Day options depend on the meet, so they must exist before open() sets the entry's day.
+  form.elements.meet_id.value = String(entry ? entry.meet_id : "");
+  fillSwimDays(form);
 
   let values;
   if (entry) {
@@ -384,6 +410,7 @@ function openEntryDialog(entry = null) {
     values = {
       meet_id: entry.meet_id,
       swimmer_id: entry.swimmer_id,
+      swim_date: entry.swim_date,
       distance: event.distance,
       stroke: event.stroke,
       course: event.course,

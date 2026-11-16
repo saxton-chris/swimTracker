@@ -29,10 +29,27 @@ def update_meet(meet_id: int, update: schemas.MeetUpdate, db: DbSession):
 
     # Check the date range using post-update values (changed fields override stored ones)
     changes = update.model_dump(exclude_unset=True)
+    new_date = changes.get("date", existing.date)
+    new_end_date = changes.get("end_date", existing.end_date)
     try:
-        schemas.check_meet_dates(changes.get("date", existing.date), changes.get("end_date", existing.end_date))
+        schemas.check_meet_dates(new_date, new_end_date)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # Don't strand entries on a day the meet no longer covers
+    outside = []
+    for entry in existing.meet_entries:
+        try:
+            schemas.check_swim_date(entry.swim_date, new_date, new_end_date)
+        except ValueError:
+            outside.append(entry)
+    if outside:
+        days = ", ".join(sorted({e.swim_date.isoformat() for e in outside}))
+        raise HTTPException(
+            status_code=400,
+            detail=f"{len(outside)} {'entry is' if len(outside) == 1 else 'entries are'} on days outside "
+            f"the new dates ({days}); change their day first",
+        )
 
     return crud.update_meet(db, meet_id, update)
 

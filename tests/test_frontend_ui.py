@@ -321,6 +321,33 @@ def test_entries_show_multi_day_meet_range(page, db, meet_entry, meet):
     expect(page.locator("#entries-body tr.meet-heading .meet-location")).to_have_text("Edina")
 
 
+def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event):
+    one_day = crud.create_meet(db, schemas.MeetCreate(name="Dual", date=date(2026, 2, 7)))
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    open_app(page)
+    page.locator("#add-entry").click()
+    day_field = page.locator("#swim-date-field")
+
+    fill(page, "entry-form", meet_id=one_day.id)
+    expect(day_field).to_be_hidden()
+    fill(page, "entry-form", meet_id=meet.id)
+    expect(day_field).to_be_visible()
+    days = page.locator("#entry-form [name=swim_date] option")
+    expect(days).to_have_text(["Not recorded", "Sat, Jan 10", "Sun, Jan 11"])
+
+    save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, swim_date="2026-01-11", time="33.10")
+    [entry] = api(page, "/meet_entries/")
+    assert entry["swim_date"] == "2026-01-11"
+    expect(row(page, "entries", swimmer.name).locator(".swim-day")).to_have_text("Sun, Jan 11")
+
+    # Editing prefills the day; moving the entry to a one-day meet clears it
+    click_row_button(page, "entries", swimmer.name, "Edit")
+    expect(page.locator("#entry-form [name=swim_date]")).to_have_value("2026-01-11")
+    save(page, "entry-dialog", "entry-form", meet_id=one_day.id)
+    [entry] = api(page, "/meet_entries/")
+    assert (entry["meet_id"], entry["swim_date"]) == (one_day.id, None)
+
+
 def test_meets_sorted_oldest_first_by_start_date(page, db, swimmer):
     # "Mid" starts before "Late" but ends after it: the start date decides.
     for name, start, end in [
