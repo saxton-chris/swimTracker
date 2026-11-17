@@ -9,7 +9,7 @@ import { ageAt, blankToNull, formatDay, formatMeetDates, formatTime, meetDays, p
 import { drawProgressChart, progressPoints, progressSummary } from "../progress-chart.js";
 import { prEntryIds } from "../prs.js";
 import { ageGroupFor, indexSet, loadSet, loadedSet, setKey, setLabel, standingFor } from "../standards-data.js";
-import { STROKE_ORDER, byId, mutate, newestMeet, state } from "../store.js";
+import { STROKE_ORDER, byId, mutate, newestMeet, newestMeetFirst, state } from "../store.js";
 import { showView } from "../tabs.js";
 import { toast } from "../toast.js";
 
@@ -134,8 +134,7 @@ export function renderEntries() {
       time: timeByEntry.get(e.id),
     }))
     .sort((a, b) =>
-      a.meet.date.localeCompare(b.meet.date) ||
-      a.meet.name.localeCompare(b.meet.name) ||
+      newestMeetFirst(a.meet, b.meet) ||
       a.swimmer.name.localeCompare(b.swimmer.name) ||
       (a.entry.swim_date ?? "￿").localeCompare(b.entry.swim_date ?? "￿") || // by day; unknown day last
       a.event.course.localeCompare(b.event.course) ||
@@ -317,18 +316,30 @@ function syncEntryForm() {
   fillSwimDays(form);
 }
 
-/** Offer the chosen meet's days in the Day dropdown, shown only for a multi-day meet. Keeps the day if it still fits. */
+/**
+ * Offer the chosen meet's days in the Day dropdown, shown (and required) only for a multi-day meet.
+ * Keeps the day if it still fits. Older entries may have no day; editing one makes the user pick it.
+ */
 function fillSwimDays(form) {
   const meet = state.meets.find((m) => m.id === Number(form.elements.meet_id.value));
   const days = meet ? meetDays(meet) : [];
+  const multiDay = days.length > 1;
   const select = form.elements.swim_date;
   const current = select.value;
   select.replaceChildren(
-    el("option", { value: "", textContent: "Not recorded" }),
+    el("option", { value: "", textContent: "Select a day…" }),
     ...days.map((d) => el("option", { value: d, textContent: formatDay(d) })),
   );
-  select.value = days.length > 1 && days.includes(current) ? current : "";
-  document.getElementById("swim-date-field").hidden = days.length < 2;
+  select.value = multiDay && days.includes(current) ? current : "";
+  // Only while shown: a hidden required field would block the submit with nothing to fix.
+  select.required = multiDay;
+  document.getElementById("swim-date-field").hidden = !multiDay;
+}
+
+/** True when the chosen meet spans more than one day, so the entry needs a day. */
+function needsSwimDay(meetId) {
+  const meet = state.meets.find((m) => m.id === meetId);
+  return Boolean(meet) && meetDays(meet).length > 1;
 }
 
 {
@@ -349,6 +360,7 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
   const distance = Number(f.distance);
   if (!Number.isInteger(distance) || distance <= 0) throw new Error("Distance must be a positive whole number.");
   if (relay && !RELAY_STROKES.has(f.stroke)) throw new Error("A relay is Free or Medley.");
+  if (needsSwimDay(Number(f.meet_id)) && !f.swim_date) throw new Error("Select the day this was swum.");
   const hasResult = seconds !== null || dq;
   if (!hasResult && (timeNotes || leg !== null || split !== null)) {
     throw new Error("Enter a time (or mark it a DQ) to save the result details.");

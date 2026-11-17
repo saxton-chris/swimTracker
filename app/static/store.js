@@ -28,12 +28,16 @@ export async function loadAll() {
   ]);
   Object.assign(state, { swimmers, meets, events, entries, times, standardSets });
   state.swimmers.sort((a, b) => a.name.localeCompare(b.name));
-  // Oldest first by start date, everywhere meets are listed.
-  state.meets.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  state.meets.sort(newestMeetFirst);
 }
 
-/** Default meet for a new entry or import: the most recent one (meets are listed oldest first). */
-export const newestMeet = () => state.meets[state.meets.length - 1];
+/** Most recent first by start date, everywhere meets are listed; same-day meets by name. */
+export function newestMeetFirst(a, b) {
+  return b.date.localeCompare(a.date) || a.name.localeCompare(b.name);
+}
+
+/** Default meet for a new entry or import: the most recent one (meets are listed newest first). */
+export const newestMeet = () => state.meets[0];
 
 /** "\n\nThis will also delete 3 meet entries and 2 results." for the confirm prompt. */
 export function cascadeWarning(entries) {
