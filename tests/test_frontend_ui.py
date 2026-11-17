@@ -333,7 +333,13 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
     fill(page, "entry-form", meet_id=meet.id)
     expect(day_field).to_be_visible()
     days = page.locator("#entry-form [name=swim_date] option")
-    expect(days).to_have_text(["Not recorded", "Sat, Jan 10", "Sun, Jan 11"])
+    expect(days).to_have_text(["Select a day…", "Sat, Jan 10", "Sun, Jan 11"])
+
+    # The day is required for a multi-day meet: saving without one keeps the dialog open.
+    fill(page, "entry-form", swimmer_id=swimmer.id, time="33.10")
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-dialog")).to_be_visible()
+    assert api(page, "/meet_entries/") == []
 
     save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, swim_date="2026-01-11", time="33.10")
     [entry] = api(page, "/meet_entries/")
@@ -348,8 +354,23 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
     assert (entry["meet_id"], entry["swim_date"]) == (one_day.id, None)
 
 
-def test_meets_sorted_oldest_first_by_start_date(page, db, swimmer):
-    # "Mid" starts before "Late" but ends after it: the start date decides.
+def test_editing_old_entry_without_day_requires_one(page, db, meet_entry, meet):
+    # Entries saved before days were required have none; editing one at a multi-day meet asks for it.
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    open_app(page)
+    click_row_button(page, "entries", meet_entry.swimmer.name, "Add time")
+    day = page.locator("#entry-form [name=swim_date]")
+    expect(day).to_have_value("")
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-dialog")).to_be_visible()
+
+    save(page, "entry-dialog", "entry-form", swim_date="2026-01-10")
+    [entry] = api(page, "/meet_entries/")
+    assert entry["swim_date"] == "2026-01-10"
+
+
+def test_meets_sorted_newest_first_by_start_date(page, db, swimmer):
+    # "Mid" starts before "Late" but ends after it: the start date decides, so "Late" comes first.
     for name, start, end in [
         ("New", date(2026, 6, 1), None),
         ("Late", date(2025, 9, 5), None),
@@ -357,7 +378,7 @@ def test_meets_sorted_oldest_first_by_start_date(page, db, swimmer):
         ("Mid", date(2025, 9, 1), date(2025, 9, 10)),
     ]:
         crud.create_meet(db, schemas.MeetCreate(name=name, date=start, end_date=end))
-    expected = ["Old", "Mid", "Late", "New"]
+    expected = ["New", "Late", "Mid", "Old"]
 
     open_app(page, "meets")
     expect(page.locator("#meets-body tr td:nth-child(2)")).to_have_text(expected)
@@ -414,14 +435,14 @@ def two_meets(db, seeded):
 def test_filters(page, two_meets):
     open_app(page)
     expect(page.locator("#entries-body tr.entry")).to_have_count(3)
-    # One heading per meet, oldest first: Winter Invite (Jan 10) before Spring Champs (Mar 1),
+    # One heading per meet, newest first: Spring Champs (Mar 1) before Winter Invite (Jan 10),
     # each followed by its own entries.
     headings = page.locator("#entries-body tr.meet-heading .meet-name")
-    expect(headings).to_have_text(["Winter Invite", "Spring Champs"])
+    expect(headings).to_have_text(["Spring Champs", "Winter Invite"])
     kinds = page.locator("#entries-body tr").evaluate_all(
         "rows => rows.map(r => r.classList.contains('meet-heading') ? 'meet-heading' : r.className)"
     )
-    assert kinds == ["meet-heading", "entry", "entry", "meet-heading", "entry"]
+    assert kinds == ["meet-heading", "entry", "meet-heading", "entry", "entry"]
 
     page.select_option("#filter-meet", str(two_meets.meet_id))
     expect(page.locator("#entries-body tr.entry")).to_have_count(2)
