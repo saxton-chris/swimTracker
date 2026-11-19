@@ -204,14 +204,17 @@ function timeCell(time, event, isPr) {
 function entryRow(row, standard, isPr) {
   const { entry, meet, swimmer, event, time } = row;
   const detail = relayDetail(time);
-  const day = entry.swim_date && meet.end_date && meet.end_date !== meet.date ? formatDay(entry.swim_date) : null;
+  // The day it was swum: recorded on the entry, or the only day of a one-day meet (unknown if neither).
+  const oneDay = !meet.end_date || meet.end_date === meet.date;
+  const dayIso = entry.swim_date ?? (oneDay ? meet.date : null);
+  const day = dayIso ? formatDay(dayIso) : null;
   const notes = [time && time.dq && time.dq_reason ? `DQ: ${time.dq_reason}` : null, time && time.notes]
     .filter(Boolean).join(" · ");
   return el("tr", { class: time && time.dq ? "entry dq" : "entry" },
     el("td", { class: "c-swimmer", textContent: swimmer.name }),
     el("td", { class: "c-event" },
       entry.event_number != null
-        ? el("span", { class: "event-number", textContent: `#${entry.event_number}`, title: `Event ${entry.event_number}` })
+        ? el("span", { class: "event-number", textContent: `E${entry.event_number}`, title: `Event ${entry.event_number}` })
         : null,
       el("button", {
         type: "button",
@@ -365,8 +368,8 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
   if (!Number.isInteger(distance) || distance <= 0) throw new Error("Distance must be a positive whole number.");
   if (relay && !RELAY_STROKES.has(f.stroke)) throw new Error("A relay is Free or Medley.");
   if (needsSwimDay(Number(f.meet_id)) && !f.swim_date) throw new Error("Select the day this was swum.");
-  const eventNumber = f.event_number.trim() ? Number(f.event_number) : null;
-  if (eventNumber !== null && !(Number.isInteger(eventNumber) && eventNumber >= 1 && eventNumber <= 9999)) {
+  const eventNumber = Number(f.event_number.trim() || NaN); // required: blank is NaN, which fails the check
+  if (!(Number.isInteger(eventNumber) && eventNumber >= 1 && eventNumber <= 9999)) {
     throw new Error("Event # must be a whole number from 1 to 9999.");
   }
   const hasResult = seconds !== null || dq;

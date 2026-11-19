@@ -50,6 +50,20 @@ def fill(page, form_id, **fields):
             field.fill(str(value))
 
 
+def fill_entry(page, **fields):
+    """Fill the entry form. Event # is required, so a blank one gets "1" unless the test sets it."""
+    if "event_number" not in fields and not page.locator("#entry-form [name=event_number]").input_value():
+        fields = {"event_number": "1", **fields}
+    fill(page, "entry-form", **fields)
+
+
+def save_entry(page, **fields):
+    """fill_entry, then Save, and wait for the dialog to close."""
+    fill_entry(page, **fields)
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-dialog")).to_be_hidden()
+
+
 def save(page, dialog_id, form_id, **fields):
     """Fill the dialog's form, click Save, and wait for it to close (all writes done)."""
     fill(page, form_id, **fields)
@@ -328,20 +342,20 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
     page.locator("#add-entry").click()
     day_field = page.locator("#swim-date-field")
 
-    fill(page, "entry-form", meet_id=one_day.id)
+    fill_entry(page, meet_id=one_day.id)
     expect(day_field).to_be_hidden()
-    fill(page, "entry-form", meet_id=meet.id)
+    fill_entry(page, meet_id=meet.id)
     expect(day_field).to_be_visible()
     days = page.locator("#entry-form [name=swim_date] option")
     expect(days).to_have_text(["Select a day…", "Sat, Jan 10", "Sun, Jan 11"])
 
     # The day is required for a multi-day meet: saving without one keeps the dialog open.
-    fill(page, "entry-form", swimmer_id=swimmer.id, time="33.10")
+    fill_entry(page, swimmer_id=swimmer.id, time="33.10")
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-dialog")).to_be_visible()
     assert api(page, "/meet_entries/") == []
 
-    save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, swim_date="2026-01-11", time="33.10")
+    save_entry(page, swimmer_id=swimmer.id, swim_date="2026-01-11", time="33.10")
     [entry] = api(page, "/meet_entries/")
     assert entry["swim_date"] == "2026-01-11"
     expect(row(page, "entries", swimmer.name).locator(".swim-day")).to_have_text("Sun, Jan 11")
@@ -349,7 +363,7 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
     # Editing prefills the day; moving the entry to a one-day meet clears it
     click_row_button(page, "entries", swimmer.name, "Edit")
     expect(page.locator("#entry-form [name=swim_date]")).to_have_value("2026-01-11")
-    save(page, "entry-dialog", "entry-form", meet_id=one_day.id)
+    save_entry(page, meet_id=one_day.id)
     [entry] = api(page, "/meet_entries/")
     assert (entry["meet_id"], entry["swim_date"]) == (one_day.id, None)
 
@@ -357,18 +371,59 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
 def test_entry_event_number(page, db, swimmer, meet, swim_event):
     open_app(page)
     page.locator("#add-entry").click()
-    save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, event_number="12", time="33.10")
+    save_entry(page, swimmer_id=swimmer.id, event_number="12", time="33.10")
     [entry] = api(page, "/meet_entries/")
     assert entry["event_number"] == 12
-    expect(row(page, "entries", swimmer.name).locator(".event-number")).to_have_text("#12")
+    number = row(page, "entries", swimmer.name).locator(".event-number")
+    expect(number).to_have_text("E12")
+    expect(number).to_have_attribute("title", "Event 12")
 
-    # Editing prefills it; clearing it removes it
+    # Editing prefills it, and it can't be cleared: Event # is required.
     click_row_button(page, "entries", swimmer.name, "Edit")
-    expect(page.locator("#entry-form [name=event_number]")).to_have_value("12")
-    save(page, "entry-dialog", "entry-form", event_number="")
+    field = page.locator("#entry-form [name=event_number]")
+    expect(field).to_have_value("12")
+    fill(page, "entry-form", event_number="")
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-dialog")).to_be_visible()
+    assert field.evaluate("e => e.validity.valueMissing")
     [entry] = api(page, "/meet_entries/")
-    assert entry["event_number"] is None
-    expect(row(page, "entries", swimmer.name).locator(".event-number")).to_have_count(0)
+    assert entry["event_number"] == 12
+
+
+def test_new_entry_requires_event_number(page, swimmer, meet):
+    open_app(page)
+    page.locator("#add-entry").click()
+    fill(page, "entry-form", swimmer_id=swimmer.id, time="33.10")
+    page.locator("#entry-form button[type=submit]").click()
+    expect(page.locator("#entry-dialog")).to_be_visible()
+    assert page.locator("#entry-form [name=event_number]").evaluate("e => e.validity.valueMissing")
+    assert api(page, "/meet_entries/") == []
+
+
+def test_entry_without_event_number_shows_no_label(page, meet_entry):
+    """Older and imported entries may have no number; the API still allows that."""
+    open_app(page)
+    expect(row(page, "entries", meet_entry.swimmer.name).locator(".event-number")).to_have_count(0)
+
+
+def test_one_day_meet_shows_its_date_under_the_event(page, meet_entry):
+    open_app(page)
+    expect(row(page, "entries", meet_entry.swimmer.name).locator(".swim-day")).to_have_text("Sat, Jan 10")
+
+
+def test_multi_day_entry_without_a_day_shows_none(page, db, meet_entry, meet):
+    crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))
+    open_app(page)
+    expect(row(page, "entries", meet_entry.swimmer.name).locator(".swim-day")).to_have_count(0)
+
+
+def test_entry_dialog_event_row_fits_the_dialog(page, swimmer, meet):
+    """Regression: the Course select used to overflow the dialog's right edge."""
+    open_app(page)
+    page.locator("#add-entry").click()
+    form_box = page.locator("#entry-form").bounding_box()
+    course_box = page.locator("#entry-form [name=course]").bounding_box()
+    assert course_box["x"] + course_box["width"] <= form_box["x"] + form_box["width"] + 0.5
 
 
 def test_editing_old_entry_without_day_requires_one(page, db, meet_entry, meet):
@@ -381,7 +436,7 @@ def test_editing_old_entry_without_day_requires_one(page, db, meet_entry, meet):
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-dialog")).to_be_visible()
 
-    save(page, "entry-dialog", "entry-form", swim_date="2026-01-10")
+    save_entry(page, swim_date="2026-01-10")
     [entry] = api(page, "/meet_entries/")
     assert entry["swim_date"] == "2026-01-10"
 
@@ -533,10 +588,8 @@ def test_add_entry_needs_a_swimmer_and_a_meet(page, meet):
 def test_add_entry_creates_event_and_result(page, swimmer, meet):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    save(
+    save_entry(
         page,
-        "entry-dialog",
-        "entry-form",
         meet_id=meet.id,
         swimmer_id=swimmer.id,
         distance=200,
@@ -566,7 +619,7 @@ def test_add_dq_without_a_time(page, swimmer, meet):
     expect(reason).to_be_hidden()
     page.locator("#entry-form [name=dq]").check()
     expect(reason).to_be_visible()  # the reason field only shows for a DQ
-    save(page, "entry-dialog", "entry-form", distance=50, stroke="BK", course="LCM", dq_reason="Scissors kick")
+    save_entry(page, distance=50, stroke="BK", course="LCM", dq_reason="Scissors kick")
 
     [result] = api(page, "/swim_times/")
     assert (result["dq"], result["dq_reason"], result["time_seconds"]) == (True, "Scissors kick", None)
@@ -579,7 +632,7 @@ def test_add_dq_without_a_time(page, swimmer, meet):
 def test_dq_keeps_the_time_swum_but_shows_it_struck_through(page, swimmer, meet):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    save(page, "entry-dialog", "entry-form", distance=50, stroke="FR", course="LCM", time="42.96", dq=True)
+    save_entry(page, distance=50, stroke="FR", course="LCM", time="42.96", dq=True)
     [result] = api(page, "/swim_times/")
     assert (result["dq"], result["time_seconds"]) == (True, 42.96)
     expect(row(page, "entries", "50 FR LCM").locator(".dq-time")).to_have_text("42.96")
@@ -598,9 +651,7 @@ def test_add_relay_leg(page, swimmer, meet):
     expect(form.locator("[name=stroke] option[value=BK]")).to_have_js_property("disabled", True)
     expect(form.locator("[name=stroke] option[value=IM]")).to_have_text("Medley")
 
-    save(
-        page, "entry-dialog", "entry-form",
-        distance=200, stroke="IM", course="LCM", time="3:04.99", relay_leg=4, split="41.94",
+    save_entry(page, distance=200, stroke="IM", course="LCM", time="3:04.99", relay_leg=4, split="41.94",
     )  # fmt: skip
 
     [event] = api(page, "/events/")
@@ -624,7 +675,7 @@ def test_relay_and_individual_events_stay_separate(page, swimmer, meet, swim_eve
     """50 FR SCY exists; entering a 50 FR SCY relay creates a new relay event instead of reusing it."""
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    save(page, "entry-dialog", "entry-form", distance=50, stroke="FR", course="SCY", relay=True, time="1:59.00")
+    save_entry(page, distance=50, stroke="FR", course="SCY", relay=True, time="1:59.00")
     assert sorted(e["name"] for e in api(page, "/events/")) == ["50 FR SCY", "50 FR-R SCY"]
 
 
@@ -657,7 +708,7 @@ def test_edit_relay_dq_prefills_and_can_be_un_dqd(page, relay_dq):
     expect(page.locator("#relay-fields")).to_be_visible()
     expect(page.locator("#dq-reason-field")).to_be_visible()
 
-    save(page, "entry-dialog", "entry-form", dq=False)
+    save_entry(page, dq=False)
     [result] = api(page, "/swim_times/")
     assert (result["dq"], result["dq_reason"], result["time_seconds"], result["relay_leg"]) == (False, None, 160.5, 3)
     expect(row(page, "entries", "200 FR-R LCM").locator(".clock")).to_have_text("2:40.50")
@@ -667,7 +718,7 @@ def test_relay_result_can_become_an_individual_swim(page, relay_dq):
     """Unticking Relay on a result with a leg and split clears them and moves it to the individual event."""
     open_app(page)
     click_row_button(page, "entries", "200 FR-R LCM", "Edit")
-    save(page, "entry-dialog", "entry-form", relay=False, dq=False)
+    save_entry(page, relay=False, dq=False)
     [entry] = api(page, "/meet_entries/")
     event = next(e for e in api(page, "/events/") if e["id"] == entry["event_id"])
     assert (event["name"], event["relay"]) == ("200 FR LCM", False)
@@ -681,7 +732,7 @@ def test_relay_result_can_become_an_individual_swim(page, relay_dq):
 def test_result_details_need_a_time_or_dq(page, swimmer, meet, fields):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    fill(page, "entry-form", distance=100, stroke="FR", course="SCY", **fields)
+    fill_entry(page, distance=100, stroke="FR", course="SCY", **fields)
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-form .form-error")).to_have_text(
         "Enter a time (or mark it a DQ) to save the result details."
@@ -692,7 +743,7 @@ def test_result_details_need_a_time_or_dq(page, swimmer, meet, fields):
 def test_add_entry_reuses_existing_event_and_allows_no_time(page, swimmer, meet, swim_event):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    save(page, "entry-dialog", "entry-form", distance=50, stroke="FR", course="SCY", time="")
+    save_entry(page, distance=50, stroke="FR", course="SCY", time="")
     assert len(api(page, "/events/")) == 1
     assert api(page, "/meet_entries/")[0]["event_id"] == swim_event.id
     assert api(page, "/swim_times/") == []
@@ -709,7 +760,7 @@ def test_new_entry_defaults_to_current_filters_and_last_course(page, two_meets):
     expect(page.locator("#entry-form [name=distance]")).to_have_value("50")
     expect(page.locator("#entry-form [name=course]")).to_have_value("SCY")
 
-    save(page, "entry-dialog", "entry-form", distance=100, stroke="FL", course="LCM")
+    save_entry(page, distance=100, stroke="FL", course="LCM")
     page.get_by_role("button", name="+ Add entry").click()
     expect(page.locator("#entry-form [name=course]")).to_have_value("LCM")
     expect(page.locator("#entry-form [name=time]")).to_have_value("")  # reset from last time
@@ -726,7 +777,7 @@ def test_new_entry_defaults_to_current_filters_and_last_course(page, two_meets):
 def test_invalid_entry_shows_error_and_writes_nothing(page, swimmer, meet, fields, error):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    fill(page, "entry-form", **fields)
+    fill_entry(page, **fields)
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-form .form-error")).to_contain_text(error)
     expect(page.locator("#entry-dialog")).to_be_visible()
@@ -737,7 +788,7 @@ def test_invalid_entry_shows_error_and_writes_nothing(page, swimmer, meet, field
 def test_duplicate_entry_shows_server_error(page, meet_entry):
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    fill(page, "entry-form", distance=50, stroke="FR", course="SCY")
+    fill_entry(page, distance=50, stroke="FR", course="SCY")
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-form .form-error")).to_have_text(
         "This swimmer is already entered in this event at this meet"
@@ -761,7 +812,7 @@ def test_retry_after_failed_result_save_does_not_duplicate_entry(page, swimmer, 
     page.route("**/swim_times/", fail_first_time_post)
     open_app(page)
     page.get_by_role("button", name="+ Add entry").click()
-    fill(page, "entry-form", distance=100, stroke="FR", course="SCY", time="1:05.00")
+    fill_entry(page, distance=100, stroke="FR", course="SCY", time="1:05.00")
     page.locator("#entry-form button[type=submit]").click()
     expect(page.locator("#entry-form .form-error")).to_have_text("temporary glitch")
     assert len(api(page, "/meet_entries/")) == 1
@@ -788,7 +839,7 @@ def test_edit_entry_prefills_and_updates_result(page, seeded):
     expect(page.locator(f"{form} [name=time]")).to_have_value("32.45")
     expect(page.locator(f"{form} [name=time_notes]")).to_have_value("PB")
 
-    save(page, "entry-dialog", "entry-form", time="31.9", time_notes="")
+    save_entry(page, time="31.9", time_notes="")
     [result] = api(page, "/swim_times/")
     assert (result["meet_entry_id"], result["time_seconds"], result["notes"]) == (seeded.adella_entry_id, 31.9, None)
     expect(row(page, "entries", "Adella Barber")).to_contain_text("31.90")
@@ -798,7 +849,7 @@ def test_edit_entry_prefills_and_updates_result(page, seeded):
 def test_clearing_time_deletes_result_but_keeps_entry(page, seeded):
     open_app(page)
     click_row_button(page, "entries", "Adella Barber", "Edit")
-    save(page, "entry-dialog", "entry-form", time="", time_notes="")
+    save_entry(page, time="", time_notes="")
     assert api(page, "/swim_times/") == []
     assert len(api(page, "/meet_entries/")) == 2
     expect(row(page, "entries", "Adella Barber").get_by_role("button", name="Add time")).to_be_visible()
@@ -808,7 +859,7 @@ def test_add_time_to_untimed_entry(page, seeded):
     open_app(page)
     click_row_button(page, "entries", "Ben Cho", "Add time")
     expect(page.locator("#entry-form [name=time]")).to_have_value("")
-    save(page, "entry-dialog", "entry-form", time="29.5")
+    save_entry(page, time="29.5")
     times = {t["meet_entry_id"]: t["time_seconds"] for t in api(page, "/swim_times/")}
     assert times == {seeded.adella_entry_id: 32.45, seeded.ben_entry_id: 29.5}
 
@@ -817,7 +868,7 @@ def test_edit_entry_changes_swimmer_and_event(page, seeded, db):
     other = crud.create_swimmer(db, schemas.SwimmerCreate(name="Cara Diaz", birthdate=date(2015, 1, 1), gender="F"))
     open_app(page)
     click_row_button(page, "entries", "Adella Barber", "Edit")
-    save(page, "entry-dialog", "entry-form", swimmer_id=other.id, distance=100, stroke="IM")
+    save_entry(page, swimmer_id=other.id, distance=100, stroke="IM")
     entry = next(e for e in api(page, "/meet_entries/") if e["id"] == seeded.adella_entry_id)
     event = next(e for e in api(page, "/events/") if e["id"] == entry["event_id"])
     assert (entry["swimmer_id"], event["name"]) == (other.id, "100 IM SCY")
@@ -1539,7 +1590,7 @@ def test_prs_update_after_an_edit_and_swimmer_is_not_remembered(page, progressio
 
     page.get_by_role("tab", name="Entries & Results").click()
     row(page, "entries", "Adella Barber").filter(has_text="32.45").get_by_role("button", name="Edit").click()
-    save(page, "entry-dialog", "entry-form", time="30.99")
+    save_entry(page, time="30.99")
     page.get_by_role("tab", name="PRs").click()
     expect(page.locator("#pr-swimmer")).to_have_value(str(progression.adella_id))
     expect(page.locator("#prs-body .clock")).to_have_text(["30.99"])
