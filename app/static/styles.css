@@ -402,9 +402,12 @@ dialog::backdrop { background: rgb(20 8 32 / 0.55); }
 dialog h2 { margin: 0 0 14px; font: 700 1.5rem/1.1 var(--font-display); }
 dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 500; }
-dialog .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-dialog .row.two { grid-template-columns: 1fr 1fr; }
-dialog .row.four { grid-template-columns: 0.8fr 1fr 1fr 1fr; }
+/* minmax(0, ...) and min-width: 0 let the columns shrink below their content's natural width, so a
+   wide <select> can't push the last column past the dialog's edge. */
+dialog .row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+dialog .row.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+dialog .row.four { grid-template-columns: minmax(0, 0.8fr) repeat(3, minmax(0, 1fr)); }
+dialog .row > * { min-width: 0; }
 dialog label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
 dialog label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--orange); }
 fieldset {
@@ -457,6 +460,8 @@ button.link.event-link { padding-left: 0; text-align: left; font-weight: 500; }
   .topbar { gap: 0 16px; }
   .topbar h1 { font-size: 1.5rem; }
   dialog .row { grid-template-columns: 1fr; }
+  /* Event #, Distance, Stroke, Course: two by two, so Stroke's labels aren't cut off */
+  dialog .row.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .toolbar label, .toolbar select, .toolbar .field { width: 100%; }
   details.multiselect summary { max-width: none; }
 
