@@ -380,6 +380,7 @@ td.pending { color: var(--muted); }
 .std-next { display: block; margin-top: 3px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Relay leg and split, under the event name. */
+.event-number { margin-right: 6px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .relay-detail,
 .swim-day { display: block; margin-top: 2px; font-size: 0.85rem; color: var(--muted); }
 
@@ -403,6 +404,7 @@ dialog form { display: flex; flex-direction: column; gap: 12px; }
 dialog label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 500; }
 dialog .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 dialog .row.two { grid-template-columns: 1fr 1fr; }
+dialog .row.four { grid-template-columns: 0.8fr 1fr 1fr 1fr; }
 dialog label.check { flex-direction: row; align-items: center; gap: 8px; cursor: pointer; }
 dialog label.check input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--orange); }
 fieldset {

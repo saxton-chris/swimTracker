@@ -95,6 +95,8 @@ class MeetEntry(Base):
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
     # The day this event was swum, within the meet's date range; None if unknown.
     swim_date: Mapped[date_type | None] = mapped_column(Date, default=None)
+    # The meet's number for this event (e.g. 12 for "Event 12"); None if unknown.
+    event_number: Mapped[int | None] = mapped_column(default=None)
 
     meet: Mapped["Meet"] = relationship(back_populates="meet_entries")
     swimmer: Mapped["Swimmer"] = relationship(back_populates="meet_entries")

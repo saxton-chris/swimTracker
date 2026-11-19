@@ -76,6 +76,13 @@ def test_event_re(text, expected):
     assert m.group("distance", "course", "unit", "stroke", "relay", "timetrial") == expected
 
 
+@pytest.mark.parametrize(
+    "text, number", [("Event 1 Girls 11-12 50 SC Yard Freestyle", "1"), ("Boys 9-10 50 LC Meter Freestyle", None)]
+)
+def test_event_re_number(text, number):
+    assert imr.EVENT_RE.match(text).group("number") == number
+
+
 class TestParseResultRow:
     def test_full_row_uses_last_time(self):
         r = imr.parse_result_row(result_row(0, "1", "Barber, Adella F", "12", "WEST-MN", "30.00", "29.50", "20"))
@@ -109,8 +116,8 @@ class TestParseResultRow:
 
 # --- process_column --------------------------------------------------------
 
-EVENT_50FR_SCY = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY, "relay": False}
-EVENT_200FRR_SCY = {"distance": 200, "stroke": Stroke.FR, "course": Course.SCY, "relay": True}
+EVENT_50FR_SCY = {"distance": 50, "stroke": Stroke.FR, "course": Course.SCY, "relay": False, "number": 1}
+EVENT_200FRR_SCY = {"distance": 200, "stroke": Stroke.FR, "course": Course.SCY, "relay": True, "number": 2}
 
 
 def left_column_rows():
@@ -397,7 +404,13 @@ def test_parse_pdf_splits_columns(fake_pdfplumber):
         ("Smith, Jane", "WEST-MN", True),
         ("Lee, Sam", "NORTH-MN", False),
     ]
-    assert results[2]["event"] == {"distance": 100, "stroke": Stroke.FL, "course": Course.LCM, "relay": False}
+    assert results[2]["event"] == {
+        "distance": 100,
+        "stroke": Stroke.FL,
+        "course": Course.LCM,
+        "relay": False,
+        "number": 4,
+    }
     assert results[2]["time_seconds"] == pytest.approx(65.1)
 
     relay = [(r["name"], r["relay_leg"], r["split_seconds"], r["dq"]) for r in results if r["event"]["relay"]]
@@ -518,6 +531,26 @@ def test_import_results_is_idempotent(db, swimmer, meet):
 def test_import_results_reuses_existing_entry(db, meet_entry, meet):
     stats, _ = run_import(db, [result()], meet.id)
     assert (stats["events_created"], stats["meet_entries_created"], stats["times_imported"]) == (0, 0, 1)
+
+
+def test_import_results_records_the_event_number(db, swimmer, meet):
+    numbered = result()
+    numbered["event"]["number"] = 12
+    run_import(db, [numbered], meet.id)
+    assert db.query(MeetEntry).one().event_number == 12
+
+
+def test_import_results_fills_in_a_missing_event_number_only(db, meet_entry, meet):
+    numbered = result()
+    numbered["event"]["number"] = 12
+    run_import(db, [numbered], meet.id)  # the existing entry had none: filled in
+    db.refresh(meet_entry)
+    assert meet_entry.event_number == 12
+
+    numbered["event"]["number"] = 7
+    run_import(db, [numbered], meet.id)  # one already recorded is never overwritten
+    db.refresh(meet_entry)
+    assert meet_entry.event_number == 12
 
 
 def test_import_results_team_filter(db, swimmer, meet):

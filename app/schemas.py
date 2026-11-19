@@ -18,6 +18,7 @@ Location = Annotated[str, StringConstraints(max_length=200)]
 TimeNotes = Annotated[str, StringConstraints(max_length=300)]
 DqReason = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 RelayLeg = Annotated[int, Field(ge=1, le=4)]
+EventNumber = Annotated[int, Field(ge=1, le=9999)]
 PositiveSeconds = Annotated[float, Field(gt=0)]
 
 
@@ -120,6 +121,7 @@ class MeetEntryCreate(BaseModel):
     swimmer_id: int
     event_id: int
     swim_date: date_type | None = None  # the day it was swum, for multi-day meets
+    event_number: EventNumber | None = None  # the meet's number for the event, e.g. 12
 
 
 class MeetEntryOut(MeetEntryCreate):
@@ -133,6 +135,7 @@ class MeetEntryUpdate(BaseModel):
     swimmer_id: int | None = None
     event_id: int | None = None
     swim_date: date_type | None = None
+    event_number: EventNumber | None = None
 
     _not_null = field_validator("meet_id", "swimmer_id", "event_id")(_reject_null)
 

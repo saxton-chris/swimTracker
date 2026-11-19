@@ -137,6 +137,7 @@ export function renderEntries() {
       newestMeetFirst(a.meet, b.meet) ||
       a.swimmer.name.localeCompare(b.swimmer.name) ||
       (a.entry.swim_date ?? "￿").localeCompare(b.entry.swim_date ?? "￿") || // by day; unknown day last
+      (a.entry.event_number ?? Infinity) - (b.entry.event_number ?? Infinity) || // meet order; NaN if both unknown
       a.event.course.localeCompare(b.event.course) ||
       Number(a.event.relay) - Number(b.event.relay) || // relays after individual events
       STROKE_ORDER[a.event.stroke] - STROKE_ORDER[b.event.stroke] ||
@@ -209,6 +210,9 @@ function entryRow(row, standard, isPr) {
   return el("tr", { class: time && time.dq ? "entry dq" : "entry" },
     el("td", { class: "c-swimmer", textContent: swimmer.name }),
     el("td", { class: "c-event" },
+      entry.event_number != null
+        ? el("span", { class: "event-number", textContent: `#${entry.event_number}`, title: `Event ${entry.event_number}` })
+        : null,
       el("button", {
         type: "button",
         class: "link event-link",
@@ -361,6 +365,10 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
   if (!Number.isInteger(distance) || distance <= 0) throw new Error("Distance must be a positive whole number.");
   if (relay && !RELAY_STROKES.has(f.stroke)) throw new Error("A relay is Free or Medley.");
   if (needsSwimDay(Number(f.meet_id)) && !f.swim_date) throw new Error("Select the day this was swum.");
+  const eventNumber = f.event_number.trim() ? Number(f.event_number) : null;
+  if (eventNumber !== null && !(Number.isInteger(eventNumber) && eventNumber >= 1 && eventNumber <= 9999)) {
+    throw new Error("Event # must be a whole number from 1 to 9999.");
+  }
   const hasResult = seconds !== null || dq;
   if (!hasResult && (timeNotes || leg !== null || split !== null)) {
     throw new Error("Enter a time (or mark it a DQ) to save the result details.");
@@ -373,6 +381,7 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
     swimmer_id: Number(f.swimmer_id),
     event_id: eventId,
     swim_date: f.swim_date || null,
+    event_number: eventNumber,
   };
 
   const isNew = !editingEntry;
@@ -423,6 +432,7 @@ function openEntryDialog(entry = null) {
       meet_id: entry.meet_id,
       swimmer_id: entry.swimmer_id,
       swim_date: entry.swim_date,
+      event_number: entry.event_number,
       distance: event.distance,
       stroke: event.stroke,
       course: event.course,
