@@ -354,6 +354,23 @@ def test_entry_day_picker_for_multi_day_meet(page, db, swimmer, meet, swim_event
     assert (entry["meet_id"], entry["swim_date"]) == (one_day.id, None)
 
 
+def test_entry_event_number(page, db, swimmer, meet, swim_event):
+    open_app(page)
+    page.locator("#add-entry").click()
+    save(page, "entry-dialog", "entry-form", swimmer_id=swimmer.id, event_number="12", time="33.10")
+    [entry] = api(page, "/meet_entries/")
+    assert entry["event_number"] == 12
+    expect(row(page, "entries", swimmer.name).locator(".event-number")).to_have_text("#12")
+
+    # Editing prefills it; clearing it removes it
+    click_row_button(page, "entries", swimmer.name, "Edit")
+    expect(page.locator("#entry-form [name=event_number]")).to_have_value("12")
+    save(page, "entry-dialog", "entry-form", event_number="")
+    [entry] = api(page, "/meet_entries/")
+    assert entry["event_number"] is None
+    expect(row(page, "entries", swimmer.name).locator(".event-number")).to_have_count(0)
+
+
 def test_editing_old_entry_without_day_requires_one(page, db, meet_entry, meet):
     # Entries saved before days were required have none; editing one at a multi-day meet asks for it.
     crud.update_meet(db, meet.id, schemas.MeetUpdate(end_date=date(2026, 1, 11)))

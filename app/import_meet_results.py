@@ -64,7 +64,7 @@ from models import Course, Stroke
 COLUMN_SPLIT_X = 300  # left column words have x0 < this; right column >= this
 
 EVENT_RE = re.compile(
-    r"^(?:Event\s+\d+\s+)?"
+    r"^(?:Event\s+(?P<number>\d+)\s+)?"
     r"(?P<gender>Girls|Boys|Women|Men|Mixed)\s+"
     r"(?P<age>\d+\s*&\s*(?:Under|Over)|\d+-\d+|Open|Senior)\s+"
     r"(?P<distance>\d+)\s+"
@@ -279,6 +279,8 @@ def process_column(rows, skip_counts, state=None):
                     "course": COURSE_MAP[(m.group("course"), m.group("unit"))],
                     "relay": relay,
                 }
+                if m.group("number"):
+                    current_event["number"] = int(m.group("number"))
             state["relay_team"] = None
             continue
 
@@ -493,12 +495,19 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
 
         event = get_or_create_event(db, distance, stroke, course, relay, stats)
 
+        event_number = ev.get("number")
         meet_entry = crud.get_meet_entry(db, meet_id, swimmer.id, event.id)
         if meet_entry is None:
             meet_entry = crud.create_meet_entry(
-                db, schemas.MeetEntryCreate(meet_id=meet_id, swimmer_id=swimmer.id, event_id=event.id)
+                db,
+                schemas.MeetEntryCreate(
+                    meet_id=meet_id, swimmer_id=swimmer.id, event_id=event.id, event_number=event_number
+                ),
             )
             stats["meet_entries_created"] += 1
+        elif meet_entry.event_number is None and event_number is not None:
+            # Fill in the number on an entry added by hand or by an older import; never overwrite one.
+            crud.update_meet_entry(db, meet_entry.id, schemas.MeetEntryUpdate(event_number=event_number))
 
         existing_time = crud.get_swim_time_by_meet_entry(db, meet_entry.id)
         if existing_time is not None:

@@ -174,7 +174,7 @@ def test_meet_entry_create(client, swimmer, meet, swim_event):
     payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id}
     r = client.post("/meet_entries/", json=payload)
     assert r.status_code == 200
-    assert r.json() == {**payload, "swim_date": None, "id": r.json()["id"]}
+    assert r.json() == {**payload, "swim_date": None, "event_number": None, "id": r.json()["id"]}
 
     # duplicate
     assert client.post("/meet_entries/", json=payload).status_code == 400
@@ -289,6 +289,25 @@ def test_meet_entry_patch_swim_date(client, meet_entry, three_day_meet):
     assert client.patch(url, json={"swim_date": "2026-01-13"}).status_code == 422
     r = client.patch(url, json={"swim_date": None})  # back to not recorded
     assert r.status_code == 200 and r.json()["swim_date"] is None
+
+
+def test_meet_entry_event_number(client, swimmer, meet, swim_event):
+    payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id}
+    r = client.post("/meet_entries/", json=payload)
+    assert r.status_code == 200 and r.json()["event_number"] is None  # optional
+    url = f"/meet_entries/{r.json()['id']}"
+    r = client.patch(url, json={"event_number": 12})
+    assert r.status_code == 200 and r.json()["event_number"] == 12
+    r = client.patch(url, json={"swim_date": "2026-01-10"})  # other changes leave it alone
+    assert r.json()["event_number"] == 12
+    r = client.patch(url, json={"event_number": None})  # back to not recorded
+    assert r.status_code == 200 and r.json()["event_number"] is None
+
+
+@pytest.mark.parametrize("number", [0, -3, 10000, 1.5, "abc"])
+def test_meet_entry_event_number_invalid(client, swimmer, meet, swim_event, number):
+    payload = {"meet_id": meet.id, "swimmer_id": swimmer.id, "event_id": swim_event.id, "event_number": number}
+    assert client.post("/meet_entries/", json=payload).status_code == 422
 
 
 def test_meet_entry_patch_to_another_meet_checks_the_stored_day(client, meet_entry, three_day_meet):

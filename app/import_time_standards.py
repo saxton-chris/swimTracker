@@ -341,8 +341,11 @@ STANDARDS_DIR = Path(__file__).parent / "time_standards"
 
 FILES = {
     "USA Swimming Motivational Standards": ("usa", "USA_Swimming_Motivational_Standards.pdf", None),
-    "MN Swimming SCY Standards": ("mn", "MN_Swimming_SCY_Standards.pdf", Course.SCY),
-    "MN Swimming LCM Standards": ("mn", "MN_Swimming_LCM_Standards.pdf", Course.LCM),
+    # Each MN season is its own file; the season stored comes from the PDF's text, not the label.
+    "MN Swimming SCY Standards 2025-2026": ("mn", "MN_Swimming_SCY_Standards.pdf", Course.SCY),
+    "MN Swimming LCM Standards 2025-2026": ("mn", "MN_Swimming_LCM_Standards.pdf", Course.LCM),
+    "MN Swimming SCY Standards 2026-2027": ("mn", "2026-2027_MN_Swimming_SCY_Standards.pdf", Course.SCY),
+    "MN Swimming LCM Standards 2026-2027": ("mn", "2026-2027_MN_Swimming_LCM_Standards.pdf", Course.LCM),
 }
 
 
