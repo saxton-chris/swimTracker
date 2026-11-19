@@ -9,7 +9,7 @@ import { toast } from "../toast.js";
 
 /** One-line summary of a POST /meets/{id}/import-results reply. */
 export function importSummary(r) {
-  if (!r.results_parsed) return "No individual results found in that PDF.";
+  if (!r.results_parsed) return "No results found in that PDF.";
   const matched = r.times_imported + r.times_already_existed;
   if (!matched) return "No results in that PDF matched a swimmer on the Swimmers tab.";
   const parts = [];

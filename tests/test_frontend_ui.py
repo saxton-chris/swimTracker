@@ -663,6 +663,18 @@ def test_edit_relay_dq_prefills_and_can_be_un_dqd(page, relay_dq):
     expect(row(page, "entries", "200 FR-R LCM").locator(".clock")).to_have_text("2:40.50")
 
 
+def test_relay_result_can_become_an_individual_swim(page, relay_dq):
+    """Unticking Relay on a result with a leg and split clears them and moves it to the individual event."""
+    open_app(page)
+    click_row_button(page, "entries", "200 FR-R LCM", "Edit")
+    save(page, "entry-dialog", "entry-form", relay=False, dq=False)
+    [entry] = api(page, "/meet_entries/")
+    event = next(e for e in api(page, "/events/") if e["id"] == entry["event_id"])
+    assert (event["name"], event["relay"]) == ("200 FR LCM", False)
+    [result] = api(page, "/swim_times/")
+    assert (result["relay_leg"], result["split_seconds"], result["time_seconds"]) == (None, None, 160.5)
+
+
 @pytest.mark.parametrize(
     "fields", [{"time_notes": "x"}, {"relay": True, "relay_leg": 2}, {"relay": True, "split": "30.00"}]
 )

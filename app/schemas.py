@@ -17,6 +17,10 @@ SwimmerNotes = Annotated[str, StringConstraints(max_length=500)]
 Location = Annotated[str, StringConstraints(max_length=200)]
 TimeNotes = Annotated[str, StringConstraints(max_length=300)]
 DqReason = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
+Organization = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+AgeGroup = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+StandardName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
+Season = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=20)]
 RelayLeg = Annotated[int, Field(ge=1, le=4)]
 EventNumber = Annotated[int, Field(ge=1, le=9999)]
 PositiveSeconds = Annotated[float, Field(gt=0)]
@@ -88,12 +92,12 @@ class MeetUpdate(BaseModel):
 class MeetImportOut(BaseModel):
     """Summary of importing a results PDF into a meet."""
 
-    results_parsed: int  # individual results found in the PDF, all teams
+    results_parsed: int  # results found in the PDF, all teams (each relay swimmer counts once)
     times_imported: int
     meet_entries_created: int
     times_already_existed: int
     events_created: int
-    skipped: dict[str, int]  # relay_or_time_trial / dq_or_no_show / unparsed_row
+    skipped: dict[str, int]  # unsupported_event / no_show_or_scratch / unparsed_row
 
 
 class EventCreate(BaseModel):
@@ -185,13 +189,13 @@ class SwimTimeUpdate(BaseModel):
 
 class TimeStandardCreate(BaseModel):
     event_id: int
-    organization: str
-    age_group: str
+    organization: Organization
+    age_group: AgeGroup
     gender: Gender
-    standard_name: str
-    standard_rank: int
+    standard_name: StandardName
+    standard_rank: int = Field(ge=1)
     time_seconds: float = Field(gt=0)
-    season: str
+    season: Season
 
 
 class TimeStandardOut(TimeStandardCreate):

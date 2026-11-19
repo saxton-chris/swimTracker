@@ -385,6 +385,11 @@ const entryDialog = setupDialog("entry-dialog", async (f) => {
   };
 
   const isNew = !editingEntry;
+  const existingTime = isNew ? null : state.times.find((t) => t.meet_entry_id === editingEntry.id);
+  if (!relay && existingTime && (existingTime.relay_leg != null || existingTime.split_seconds != null)) {
+    // The API won't move a result that still has a relay leg or split to an individual event.
+    await api("PATCH", `/swim_times/${existingTime.id}`, { relay_leg: null, split_seconds: null });
+  }
   const entry = isNew
     ? await api("POST", "/meet_entries/", body)
     : await api("PATCH", `/meet_entries/${editingEntry.id}`, body);

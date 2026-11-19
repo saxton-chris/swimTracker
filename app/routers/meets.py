@@ -77,7 +77,11 @@ def import_meet_results_pdf(
         raise HTTPException(status_code=400, detail=f"Couldn't read the PDF: {e}") from e
 
     stats = import_meet_results.new_stats()
-    import_meet_results.import_results(db, results, meet_id, None, stats, set(), dry_run=False)
+    try:
+        # One transaction: a row that fails validation rolls back the whole import.
+        import_meet_results.import_results(db, results, meet_id, None, stats, set(), dry_run=False)
+    except ValueError as e:  # includes pydantic.ValidationError
+        raise HTTPException(status_code=400, detail=f"Couldn't import the results; nothing was saved: {e}") from e
     return schemas.MeetImportOut(
         results_parsed=len(results),
         times_imported=stats["times_imported"],

@@ -256,6 +256,28 @@ def test_relay_no_show_is_skipped():
     assert skips["no_show_or_scratch"] == 1
 
 
+@pytest.mark.parametrize("mark", ["DFS", "DNF"])
+def test_relay_without_a_result_is_skipped(mark):
+    """Regression: a DFS/DNF relay has no time and no DQ, which can't be stored as a result."""
+    skips, state = imr.new_skip_counts(), {"event": None}
+    rows = rows_of(
+        text_row("Girls 9-10 200 LC Meter Freestyle Relay", 10),
+        text_row(f"--- EDI-MN A {mark}", 20),
+        text_row("1) Aa, Bo 10 2) Cc, Di 10", 30),
+    )
+    imr.process_column(rows, skips, state)
+    assert state["relay_teams"] == []
+    assert skips["no_show_or_scratch"] == 1
+
+
+def test_relay_team_row_without_a_time_is_unparsed():
+    skips, state = imr.new_skip_counts(), {"event": None}
+    rows = rows_of(text_row("Girls 9-10 200 LC Meter Freestyle Relay", 10), text_row("3 EDI-MN A", 20))
+    imr.process_column(rows, skips, state)
+    assert state["relay_teams"] == []
+    assert skips["unparsed_row"] == 1
+
+
 @pytest.mark.parametrize(
     "next_row, reason",
     [
@@ -343,6 +365,8 @@ def test_parse_unplaced_row_rejects(text):
         ("23 WEST-MN A 3:05.20 3:04.99", ("23", "WEST-MN", 184.99, False, False)),  # seed, then finals
         ("--- NOR-MN A DQ 4:28.60", (None, "NOR-MN", 268.6, True, False)),
         ("--- EDI-MN B SCR", (None, "EDI-MN", None, False, True)),
+        ("--- EDI-MN B DFS", (None, "EDI-MN", None, False, True)),
+        ("--- EDI-MN B DNF", (None, "EDI-MN", None, False, True)),
     ],
 )
 def test_parse_relay_team_row(text, expected):
@@ -496,10 +520,28 @@ def test_import_results_exhibition_note(db, swimmer, meet):
     assert db.query(SwimTime).one().notes == "Imported from meet results PDF, exhibition"
 
 
-def test_import_results_requires_existing_meet(db, capsys):
-    with pytest.raises(SystemExit):
+def test_import_results_requires_existing_meet(db):
+    with pytest.raises(imr.MeetNotFoundError, match="no meet exists with id=999"):
         run_import(db, [result()], meet_id=999)
-    assert "no meet exists with id=999" in capsys.readouterr().out
+
+
+def test_import_results_is_all_or_nothing(db, swimmer, meet):
+    """A row that fails validation rolls back the rows imported before it."""
+    bad = result(time=None, distance=100)  # no time and not a DQ: not a valid result
+    with pytest.raises(ValueError):
+        run_import(db, [result(), bad], meet.id)
+    assert db.query(SwimTime).count() == 0
+    assert db.query(MeetEntry).count() == 0
+    assert crud.get_events(db) == []
+
+
+def test_import_results_commits(db, session_factory, swimmer, meet):
+    run_import(db, [result()], meet.id)
+    other = session_factory()  # a separate session only sees committed rows
+    try:
+        assert other.query(SwimTime).count() == 1
+    finally:
+        other.close()
 
 
 def test_import_results_creates_event_entry_and_time(db, swimmer, meet):
@@ -619,6 +661,13 @@ def test_main_requires_meet_id(run_main):
         run_main()
 
 
+def test_main_unknown_meet(run_main, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_main("--meet-id", "999")
+    assert exc.value.code == 1
+    assert "ERROR: no meet exists with id=999" in capsys.readouterr().out
+
+
 # --- POST /meets/{id}/import-results ---------------------------------------
 
 
@@ -671,6 +720,16 @@ def test_import_endpoint_rejects_non_pdf(upload, meet):
     r = upload(meet.id, body=b"not a pdf")
     assert r.status_code == 400
     assert "isn't a PDF" in r.json()["detail"]
+
+
+def test_import_endpoint_bad_row_saves_nothing(upload, db, swimmer, meet, monkeypatch):
+    bad = result(time=None, distance=100)
+    monkeypatch.setattr(imr, "parse_pdf", lambda f: ([result(), bad], imr.new_skip_counts()))
+    r = upload(meet.id)
+    assert r.status_code == 400
+    assert "nothing was saved" in r.json()["detail"]
+    assert db.query(SwimTime).count() == 0
+    assert db.query(MeetEntry).count() == 0
 
 
 def test_import_endpoint_unreadable_pdf(upload, meet, monkeypatch):
