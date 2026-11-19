@@ -29,40 +29,26 @@ column is simply skipped, which conveniently also skips relays and
 header/footer text without any special-casing.
 
 Malformed source data (e.g. a few rows in the MN files have values like
-"35:39" where a leading colon was clearly swapped for a colon-as-minutes
-typo in the original PDF) is logged and skipped rather than guessed at -
+"35:39", where the PDF has a colon typed in place of the decimal point
+for 35.39) is logged and skipped rather than guessed at -
 check the summary at the end and consult the source PDF for anything
 listed under "SKIPPED (malformed time value)".
 """
 
 import re
-import sys
 from pathlib import Path
 
 import pdfplumber
 
-sys.path.insert(0, str(Path(__file__).parent))
 import crud
 import schemas
 from database import SessionLocal
 from models import Course, Stroke
+from pdf_rows import cluster_rows
 
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-
-def cluster_rows(words, tol=2.5):
-    """Group words into rows by y-position ('top'), tolerating small jitter."""
-    # Words are visited top-down and each row's anchor is more than `tol` below
-    # the previous one, so only the most recent row can ever match - O(n).
-    rows = []
-    for w in sorted(words, key=lambda w: w["top"]):
-        if rows and w["top"] - rows[-1]["top"] <= tol:
-            rows[-1]["words"].append(w)
-        else:
-            rows.append({"top": w["top"], "words": [w]})
-    return rows
 
 
 def column_boundaries(x0_list):
@@ -137,7 +123,10 @@ class ImportStats:
 def get_or_create_event(db, distance, stroke, course, stats):
     event = crud.get_event(db, distance, stroke, course)
     if event is None:
-        event = crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course))
+        # Uncommitted like the standards themselves: the file's single commit saves it too.
+        event = crud.create_event(
+            db, schemas.EventCreate(distance=distance, stroke=stroke, course=course), commit=False
+        )
         stats.events_created += 1
     return event
 
@@ -166,6 +155,19 @@ def store_standard(
         commit=False,
     )
     stats.inserted += 1
+
+
+def store_tiers(db, event, organization, season, age_group, gender, tier_names, ranks, raw_values, stats, context):
+    """Store one row's times for one gender: raw_values[i] is the time for tier_names[i].
+    A blank cell means no standard is published; anything else unparseable is logged as malformed.
+    `context` (e.g. "USA p3 11-12 Girls 50 FR SCY") identifies the cell in that log."""
+    for name, raw in zip(tier_names, raw_values):
+        t = parse_time(raw)
+        if t is None:
+            if raw.strip():
+                stats.malformed.append(f"{context} {name}: {raw!r}")
+            continue
+        store_standard(db, event, organization, age_group, gender, name, ranks[name], t, season, stats)
 
 
 # ---------------------------------------------------------------------------
@@ -221,28 +223,23 @@ def import_usa_standards(db, pdf_path, stats):
                 girls_vals = [cols.get(i, "") for i in range(0, event_idx)]
                 boys_vals = [cols.get(i, "") for i in range(event_idx + 1, max(cols.keys()) + 1)]
 
-                for name, raw in zip(USA_GIRLS_ORDER, girls_vals):
-                    t = parse_time(raw)
-                    if t is None:
-                        if raw.strip():  # non-empty but unparseable = a real problem; blank = no standard published
-                            stats.malformed.append(
-                                f"USA p{page.page_number} {current_age_group} Girls {evt_txt} {name}: {raw!r}"
-                            )
-                        continue
-                    store_standard(
-                        db, event, "USA Swimming", current_age_group, "F", name, USA_RANK[name], t, season, stats
-                    )
-
-                for name, raw in zip(USA_BOYS_ORDER, boys_vals):
-                    t = parse_time(raw)
-                    if t is None:
-                        if raw.strip():
-                            stats.malformed.append(
-                                f"USA p{page.page_number} {current_age_group} Boys {evt_txt} {name}: {raw!r}"
-                            )
-                        continue
-                    store_standard(
-                        db, event, "USA Swimming", current_age_group, "M", name, USA_RANK[name], t, season, stats
+                where = f"USA p{page.page_number} {current_age_group}"
+                for gender, label, order, values in (
+                    ("F", "Girls", USA_GIRLS_ORDER, girls_vals),
+                    ("M", "Boys", USA_BOYS_ORDER, boys_vals),
+                ):
+                    store_tiers(
+                        db,
+                        event,
+                        "USA Swimming",
+                        season,
+                        current_age_group,
+                        gender,
+                        order,
+                        USA_RANK,
+                        values,
+                        stats,
+                        f"{where} {label} {evt_txt}",
                     )
     db.commit()
 
@@ -315,21 +312,24 @@ def import_mn_standards(db, pdf_path, course: Course, stats):
             girls_vals = [cols.get(i, "") for i in range(0, event_idx)]
             boys_vals = [cols.get(i, "") for i in range(event_idx + 1, max(cols.keys()) + 1)]
 
-            for name, raw in zip(MN_GIRLS_ORDER, girls_vals):
-                t = parse_time(raw)
-                if t is None:
-                    if raw.strip():
-                        stats.malformed.append(f"MN {course.value} {current_age_group} Girls {evt_txt} {name}: {raw!r}")
-                    continue
-                store_standard(db, event, "MN Swimming", current_age_group, "F", name, MN_RANK[name], t, season, stats)
-
-            for name, raw in zip(MN_BOYS_ORDER, boys_vals):
-                t = parse_time(raw)
-                if t is None:
-                    if raw.strip():
-                        stats.malformed.append(f"MN {course.value} {current_age_group} Boys {evt_txt} {name}: {raw!r}")
-                    continue
-                store_standard(db, event, "MN Swimming", current_age_group, "M", name, MN_RANK[name], t, season, stats)
+            where = f"MN {course.value} {current_age_group}"
+            for gender, label, order, values in (
+                ("F", "Girls", MN_GIRLS_ORDER, girls_vals),
+                ("M", "Boys", MN_BOYS_ORDER, boys_vals),
+            ):
+                store_tiers(
+                    db,
+                    event,
+                    "MN Swimming",
+                    season,
+                    current_age_group,
+                    gender,
+                    order,
+                    MN_RANK,
+                    values,
+                    stats,
+                    f"{where} {label} {evt_txt}",
+                )
     db.commit()
 
 

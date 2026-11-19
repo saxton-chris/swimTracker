@@ -54,8 +54,21 @@ def update_meet_entry(meet_entry_id: int, update: schemas.MeetEntryUpdate, db: D
     meet = crud.get_meet_by_id(db, changes.get("meet_id", existing.meet_id))
     if meet is None:
         raise HTTPException(status_code=404, detail=f"Meet {changes['meet_id']} not found")
-    if "event_id" in changes and not crud.get_event_by_id(db, changes["event_id"]):
-        raise HTTPException(status_code=404, detail=f"Event {changes['event_id']} not found")
+    if "event_id" in changes:
+        event = crud.get_event_by_id(db, changes["event_id"])
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"Event {changes['event_id']} not found")
+        # A relay leg or split can't be left on a result whose event is no longer a relay
+        result = existing.swim_time
+        if (
+            not event.relay
+            and result is not None
+            and (result.relay_leg is not None or result.split_seconds is not None)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"This result has a relay leg or split; clear them before changing the event to {event.name}",
+            )
     # The day must fit the (possibly new) meet, whether or not it's being changed itself
     _check_swim_date(changes.get("swim_date", existing.swim_date), meet)
 

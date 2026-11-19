@@ -421,6 +421,29 @@ def relay_entry(client, swimmer, meet):
     return client.post("/meet_entries/", json=body).json()
 
 
+@pytest.mark.parametrize("fields", [{"relay_leg": 2}, {"split_seconds": 30.5}])
+def test_entry_with_relay_leg_cannot_move_to_individual_event(client, relay_entry, swim_event, fields):
+    """Regression: the result's relay leg/split would be left on an individual event."""
+    client.post("/swim_times/", json={"meet_entry_id": relay_entry["id"], "time_seconds": 120.0, **fields})
+    r = client.patch(f"/meet_entries/{relay_entry['id']}", json={"event_id": swim_event.id})
+    assert r.status_code == 422
+    assert "clear them before changing the event to 50 FR SCY" in r.json()["detail"]
+    assert client.get("/meet_entries/").json()[0]["event_id"] == relay_entry["event_id"]
+
+
+def test_relay_entry_can_move_to_individual_event_once_leg_is_cleared(client, relay_entry, swim_event):
+    st = client.post("/swim_times/", json={"meet_entry_id": relay_entry["id"], "time_seconds": 120.0, "relay_leg": 2})
+    client.patch(f"/swim_times/{st.json()['id']}", json={"relay_leg": None})
+    r = client.patch(f"/meet_entries/{relay_entry['id']}", json={"event_id": swim_event.id})
+    assert r.status_code == 200
+    assert r.json()["event_id"] == swim_event.id
+
+
+def test_relay_entry_without_result_can_move_to_individual_event(client, relay_entry, swim_event):
+    r = client.patch(f"/meet_entries/{relay_entry['id']}", json={"event_id": swim_event.id})
+    assert r.status_code == 200
+
+
 def test_relay_result_with_leg_and_split(client, relay_entry):
     body = {"meet_entry_id": relay_entry["id"], "time_seconds": 184.99, "relay_leg": 4, "split_seconds": 41.94}
     st = client.post("/swim_times/", json=body).json()
@@ -483,6 +506,26 @@ def test_time_standard_create_and_duplicate(client, swim_event):
 
 def test_time_standard_missing_event(client):
     assert client.post("/time_standards/", json=_standard(999)).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"organization": "  "},
+        {"organization": "x" * 51},
+        {"age_group": ""},
+        {"standard_name": "x" * 21},
+        {"season": ""},
+        {"standard_rank": 0},
+    ],
+)
+def test_time_standard_field_limits(client, swim_event, overrides):
+    assert client.post("/time_standards/", json=_standard(swim_event.id, **overrides)).status_code == 422
+
+
+def test_time_standard_text_is_trimmed(client, swim_event):
+    r = client.post("/time_standards/", json=_standard(swim_event.id, organization=" USA Swimming "))
+    assert r.json()["organization"] == "USA Swimming"
 
 
 def test_time_standard_list_filters(client, swim_event):

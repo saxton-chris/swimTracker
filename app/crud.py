@@ -2,26 +2,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 import schemas
-from models import Event, Meet, MeetEntry, Swimmer, SwimTime, TimeStandard
+from models import Course, Event, Meet, MeetEntry, Stroke, Swimmer, SwimTime, TimeStandard
 
 
 def _create(db: Session, obj, *, commit: bool = True):
-    """Add a new row. commit=False leaves it pending so bulk imports can commit once at the end."""
+    """Add a new row. commit=False flushes it (so it has an id) but leaves the transaction
+    open, so an import can commit once at the end, or roll everything back on an error."""
     db.add(obj)
     if commit:
         db.commit()
         db.refresh(obj)
+    else:
+        db.flush()
     return obj
 
 
-def _apply_update(db: Session, db_obj, update):
-    """Copy only the fields the client actually sent onto db_obj and commit."""
+def _apply_update(db: Session, db_obj, update, *, commit: bool = True):
+    """Copy only the fields the client actually sent onto db_obj and commit (or flush, as in _create)."""
     if db_obj is None:
         return None
     for field, value in update.model_dump(exclude_unset=True).items():
         setattr(db_obj, field, value)
-    db.commit()
-    db.refresh(db_obj)
+    if commit:
+        db.commit()
+        db.refresh(db_obj)
+    else:
+        db.flush()
     return db_obj
 
 
@@ -83,15 +89,15 @@ def delete_meet(db: Session, meet_id: int):
 # --- events ------------------------------------------------------------------
 
 
-def create_event(db: Session, event: schemas.EventCreate):
-    return _create(db, Event(**event.model_dump()))
+def create_event(db: Session, event: schemas.EventCreate, *, commit: bool = True):
+    return _create(db, Event(**event.model_dump()), commit=commit)
 
 
 def get_events(db: Session):
     return db.scalars(select(Event)).all()
 
 
-def get_event(db: Session, distance: int, stroke, course, relay: bool = False):
+def get_event(db: Session, distance: int, stroke: Stroke, course: Course, relay: bool = False):
     return db.scalars(
         select(Event).where(
             Event.distance == distance, Event.stroke == stroke, Event.course == course, Event.relay == relay
@@ -106,8 +112,8 @@ def get_event_by_id(db: Session, event_id: int):
 # --- meet entries ------------------------------------------------------------
 
 
-def create_meet_entry(db: Session, meet_entry: schemas.MeetEntryCreate):
-    return _create(db, MeetEntry(**meet_entry.model_dump()))
+def create_meet_entry(db: Session, meet_entry: schemas.MeetEntryCreate, *, commit: bool = True):
+    return _create(db, MeetEntry(**meet_entry.model_dump()), commit=commit)
 
 
 def get_meet_entry(db: Session, meet_id: int, swimmer_id: int, event_id: int):
@@ -133,8 +139,8 @@ def get_meet_entry_by_id(db: Session, meet_entry_id: int):
     return db.get(MeetEntry, meet_entry_id)
 
 
-def update_meet_entry(db: Session, meet_entry_id: int, update: schemas.MeetEntryUpdate):
-    return _apply_update(db, get_meet_entry_by_id(db, meet_entry_id), update)
+def update_meet_entry(db: Session, meet_entry_id: int, update: schemas.MeetEntryUpdate, *, commit: bool = True):
+    return _apply_update(db, get_meet_entry_by_id(db, meet_entry_id), update, commit=commit)
 
 
 def delete_meet_entry(db: Session, meet_entry_id: int):
@@ -203,8 +209,8 @@ def get_time_standards(
 # --- swim times --------------------------------------------------------------
 
 
-def create_swim_time(db: Session, swim_time: schemas.SwimTimeCreate):
-    return _create(db, SwimTime(**swim_time.model_dump()))
+def create_swim_time(db: Session, swim_time: schemas.SwimTimeCreate, *, commit: bool = True):
+    return _create(db, SwimTime(**swim_time.model_dump()), commit=commit)
 
 
 def get_swim_time_by_id(db: Session, swim_time_id: int):

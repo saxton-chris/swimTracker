@@ -294,7 +294,7 @@ def summary(parsed=5, imported=0, created=0, existed=0):
 @pytest.mark.parametrize(
     "reply, expected",
     [
-        (summary(parsed=0), "No individual results found in that PDF."),
+        (summary(parsed=0), "No results found in that PDF."),
         (summary(), "No results in that PDF matched a swimmer on the Swimmers tab."),
         (summary(imported=1, created=1), "Imported 1 time (1 new entry)."),
         (summary(imported=3), "Imported 3 times."),

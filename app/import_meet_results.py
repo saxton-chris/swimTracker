@@ -25,7 +25,8 @@ What gets imported:
 What is skipped, by design, and counted in the summary:
   - "Time Trial" swims - unranked re-swims that share the same event/swimmer
     as the real race, and only one SwimTime per MeetEntry is allowed.
-  - No-shows (NS) and scratches (SCR) - he didn't race.
+  - No-shows (NS), scratches (SCR), and DNF/DFS swims, individual or relay -
+    there's no time to record.
   - Splits of individual races - not part of the schema.
 
 Swimmer matching: the PDF prints "Last, First M" (e.g. "Barber, Adella F").
@@ -47,15 +48,14 @@ import argparse
 import re
 import sys
 from itertools import pairwise
-from pathlib import Path
 
 import pdfplumber
 
-sys.path.insert(0, str(Path(__file__).parent))
 import crud
 import schemas
 from database import SessionLocal
 from models import Course, Stroke
+from pdf_rows import cluster_rows
 
 # ---------------------------------------------------------------------------
 # PDF parsing
@@ -84,6 +84,9 @@ RELAY_SWIMMER_RE = re.compile(r"(\d)\)\s*(.+?)\s+[WM]?(\d{1,2})(?=\s+\d\)|\s*$)"
 # Page furniture that must never be mistaken for a DQ reason.
 NOT_A_REASON_RE = re.compile(r"Site License|HY-TEK|Meet Manager|^Results\b", re.IGNORECASE)
 
+# Marks for a swim with no time to record (a DQ is recorded; these are skipped).
+NO_RESULT_MARKS = {"NS", "SCR", "DNF", "DFS"}
+
 STROKE_MAP = {
     "Freestyle": Stroke.FR,
     "Backstroke": Stroke.BK,
@@ -102,19 +105,6 @@ COURSE_MAP = {
 
 def new_skip_counts():
     return {"unsupported_event": 0, "no_show_or_scratch": 0, "unparsed_row": 0}
-
-
-def cluster_rows(words, tol=2.5):
-    """Group words into rows by y-position ('top'), tolerating small jitter."""
-    # Words are visited top-down and each row's anchor is more than `tol` below
-    # the previous one, so only the most recent row can ever match - O(n).
-    rows = []
-    for w in sorted(words, key=lambda w: w["top"]):
-        if rows and w["top"] - rows[-1]["top"] <= tol:
-            rows[-1]["words"].append(w)
-        else:
-            rows.append({"top": w["top"], "words": [w]})
-    return rows
 
 
 def parse_time(raw):
@@ -179,7 +169,7 @@ def parse_unplaced_row(words):
     if not re.match(r"^\d{1,2}$", age_word):
         return None
     after = words[team_idx + 1 :]
-    mark = next((w["text"] for w in after if w["text"] in ("DQ", "NS", "SCR", "DNF", "DFS")), None)
+    mark = next((w["text"] for w in after if w["text"] == "DQ" or w["text"] in NO_RESULT_MARKS), None)
     return {
         "place": None,
         "name": " ".join(w["text"] for w in words[1 : team_idx - 1]),
@@ -204,7 +194,7 @@ def parse_relay_team_row(words):
         "place": first if first.isdigit() else None,
         "team": words[1]["text"],
         "dq": "DQ" in texts,
-        "no_show": bool(texts & {"NS", "SCR"}),
+        "no_show": bool(texts & NO_RESULT_MARKS),
         "time_seconds": _last_time(words[3:]),
         "dq_reason": None,
         "swimmers": [],  # (leg, "Last, First M", age)
@@ -303,8 +293,9 @@ def process_column(rows, skip_counts, state=None):
         if current_event["relay"]:
             team = parse_relay_team_row(words)
             if team is not None:
-                if team["no_show"]:
-                    skip_counts["no_show_or_scratch"] += 1
+                if team["no_show"] or (team["time_seconds"] is None and not team["dq"]):
+                    # Nothing to record: NS/SCR/DNF/DFS, or a team row with no time we can read.
+                    skip_counts["no_show_or_scratch" if team["no_show"] else "unparsed_row"] += 1
                     state["relay_team"] = None
                     continue
                 team["event"] = current_event
@@ -327,7 +318,7 @@ def process_column(rows, skip_counts, state=None):
             parsed = parse_unplaced_row(words)
             if (
                 parsed is None
-                or parsed["mark"] in ("NS", "SCR", "DNF", "DFS")
+                or parsed["mark"] in NO_RESULT_MARKS
                 or (parsed["mark"] is None and not parsed["exhibition"])
             ):
                 skip_counts["no_show_or_scratch"] += 1
@@ -417,10 +408,16 @@ def build_swimmer_index(db):
 # ---------------------------------------------------------------------------
 
 
+class MeetNotFoundError(LookupError):
+    """import_results was given a meet_id with no Meet row."""
+
+
 def get_or_create_event(db, distance, stroke, course, relay, stats):
     event = crud.get_event(db, distance, stroke, course, relay)
     if event is None:
-        event = crud.create_event(db, schemas.EventCreate(distance=distance, stroke=stroke, course=course, relay=relay))
+        event = crud.create_event(
+            db, schemas.EventCreate(distance=distance, stroke=stroke, course=course, relay=relay), commit=False
+        )
         stats["events_created"] += 1
     return event
 
@@ -459,11 +456,25 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
     some chance of two different clubs sharing a same-named swimmer. Pass
     --team to rule that out if your swimmers table ever has a name that's
     common enough to worry about.
+
+    The import is one transaction: it commits at the end, or rolls back
+    everything if any row fails, so a bad file never leaves half its results.
+    Raises MeetNotFoundError if meet_id doesn't exist.
     """
     if crud.get_meet_by_id(db, meet_id) is None:
-        print(f"ERROR: no meet exists with id={meet_id}. Create it first (POST /meets/), then re-run.")
-        sys.exit(1)
+        raise MeetNotFoundError(f"no meet exists with id={meet_id}. Create it first (POST /meets/), then re-run.")
 
+    try:
+        _import_rows(db, results, meet_id, team_filter, stats, unmatched_names, dry_run)
+    except Exception:
+        db.rollback()
+        raise
+    if not dry_run:
+        db.commit()
+
+
+def _import_rows(db, results, meet_id, team_filter, stats, unmatched_names, dry_run):
+    """import_results' loop; rows are flushed, never committed, here."""
     swimmer_index = build_swimmer_index(db)
 
     for r in results:
@@ -503,11 +514,12 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
                 schemas.MeetEntryCreate(
                     meet_id=meet_id, swimmer_id=swimmer.id, event_id=event.id, event_number=event_number
                 ),
+                commit=False,
             )
             stats["meet_entries_created"] += 1
         elif meet_entry.event_number is None and event_number is not None:
             # Fill in the number on an entry added by hand or by an older import; never overwrite one.
-            crud.update_meet_entry(db, meet_entry.id, schemas.MeetEntryUpdate(event_number=event_number))
+            crud.update_meet_entry(db, meet_entry.id, schemas.MeetEntryUpdate(event_number=event_number), commit=False)
 
         existing_time = crud.get_swim_time_by_meet_entry(db, meet_entry.id)
         if existing_time is not None:
@@ -525,6 +537,7 @@ def import_results(db, results, meet_id, team_filter, stats, unmatched_names, dr
                 relay_leg=r.get("relay_leg"),
                 split_seconds=r.get("split_seconds"),
             ),
+            commit=False,
         )
         stats["times_imported"] += 1
 
@@ -571,6 +584,9 @@ def main():
     db = SessionLocal()
     try:
         import_results(db, results, args.meet_id, args.team, stats, unmatched_names, args.dry_run)
+    except MeetNotFoundError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
     finally:
         db.close()
 
