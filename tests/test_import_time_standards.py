@@ -200,7 +200,7 @@ def test_import_mn_standards_legend_without_event(db, fake_pdfplumber, capsys):
 def test_main(db, session_factory, fake_pdfplumber, monkeypatch, tmp_path, capsys):
     (tmp_path / "USA_Swimming_Motivational_Standards.pdf").touch()
     (tmp_path / "MN_Swimming_SCY_Standards.pdf").touch()
-    # LCM file intentionally missing
+    # LCM and 2026-2027 files intentionally missing
     fake_pdfplumber(
         its,
         {
@@ -215,6 +215,8 @@ def test_main(db, session_factory, fake_pdfplumber, monkeypatch, tmp_path, capsy
 
     out = capsys.readouterr().out
     assert "Importing USA Swimming Motivational Standards" in out
-    assert "Importing MN Swimming SCY Standards" in out
-    assert "SKIPPING MN Swimming LCM Standards" in out
+    assert "Importing MN Swimming SCY Standards 2025-2026" in out
+    assert "SKIPPING MN Swimming LCM Standards 2025-2026" in out
+    assert "SKIPPING MN Swimming SCY Standards 2026-2027" in out
+    assert "SKIPPING MN Swimming LCM Standards 2026-2027" in out
     assert db.query(TimeStandard).count() == 19
